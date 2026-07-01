@@ -21,6 +21,16 @@ def test_pricing_config_includes_pricing_source() -> None:
     assert response.json()["pricing_source"]["mode"] in {"config", "live"}
 
 
+def test_pricing_config_includes_common_aws_regions() -> None:
+    response = client.get("/pricing-config")
+
+    assert response.status_code == 200
+    aws_regions = response.json()["cloud"]["aws"]["regions"]
+    assert len(aws_regions) > 20
+    for region in ["eu-west-1", "eu-west-2", "eu-central-1", "us-east-1", "us-west-2", "ap-south-1"]:
+        assert region in aws_regions
+
+
 def test_estimate_endpoint() -> None:
     payload = _estimate_payload()
 
@@ -77,16 +87,16 @@ def _estimate_payload() -> dict:
             "warehouse_size": "xs",
             "queries_per_month": 0,
             "average_query_runtime_minutes": 0,
-            "concurrent_users": 1,
-            "auto_stop_minutes": 10,
+            "concurrent_users": 0,
+            "auto_stop_minutes": 0,
             "usage_pattern": "rare",
         },
         "job_compute": {
             "ingestion_frequency": "monthly",
-            "job_runs_per_month": 1,
-            "average_job_runtime_minutes": 20,
+            "job_runs_per_month": 0,
+            "average_job_runtime_minutes": 0,
             "job_cluster_size": "small",
-            "number_of_jobs": 1,
+            "number_of_jobs": 0,
         },
         "ai_bi": {"enabled": False},
     }

@@ -150,6 +150,17 @@ export interface PricingConfig {
   >;
   databricks: {
     default_dbu_rate: number;
+    dbu_rates?: {
+      sql?: Partial<Record<WarehouseType, number>>;
+      jobs?: {
+        classic?: number;
+        serverless?: number;
+        default?: number;
+      };
+      ai_bi?: {
+        default?: number;
+      };
+    };
     sql_warehouses: Record<string, { display_name: string; dbu_per_hour: number }>;
     jobs: Record<string, { display_name: string; dbu_per_hour: number }>;
   };

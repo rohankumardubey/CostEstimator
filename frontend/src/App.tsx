@@ -75,20 +75,20 @@ const defaultSql: SQLComputeInput = {
   dbu_rate: null,
   queries_per_month: 0,
   average_query_runtime_minutes: 0,
-  concurrent_users: 1,
-  auto_stop_minutes: 10,
+  concurrent_users: 0,
+  auto_stop_minutes: 0,
   usage_pattern: "rare",
   apply_concurrency_multiplier: false
 };
 
 const defaultJob: JobComputeInput = {
   ingestion_frequency: "monthly",
-  job_runs_per_month: 1,
-  average_job_runtime_minutes: 20,
+  job_runs_per_month: 0,
+  average_job_runtime_minutes: 0,
   job_cluster_size: "small",
   custom_dbu_per_hour: null,
   dbu_rate: null,
-  number_of_jobs: 1
+  number_of_jobs: 0
 };
 
 const defaultAiBi: AIBIInput = {
@@ -421,13 +421,14 @@ function App() {
   const breakdownData = estimate?.components.filter((component) => component.monthly_cost > 0) ?? [];
   const annualData = estimate
     ? [
-        { name: "Monthly", value: estimate.total_monthly_estimate },
-        { name: "Annual", value: estimate.total_annual_estimate },
-        { name: "Buffered annual", value: estimate.estimate_with_buffer_annual }
+        { name: "Monthly estimate", label: "Monthly", value: estimate.total_monthly_estimate },
+        { name: "Annual estimate", label: "Annual", value: estimate.total_annual_estimate },
+        { name: "Buffered annual estimate", label: "Buffered", value: estimate.estimate_with_buffer_annual }
       ]
     : [];
   const scenarioComparison = scenarioEstimates.map((scenarioEstimate) => ({
     name: shortScenarioName(scenarioEstimate.scenario_key, scenarioEstimate.scenario_title),
+    label: shorterScenarioLabel(scenarioEstimate.scenario_key, scenarioEstimate.scenario_title),
     value: scenarioEstimate.total_monthly_estimate
   }));
   const scenarioRecommendation = useMemo(
@@ -530,7 +531,7 @@ function App() {
         <div className="warning-strip">
           <AlertTriangle aria-hidden="true" />
           <span>
-            Storage pricing uses live provider list prices where available. Databricks DBU rates and final costs must still be validated against internal enterprise rate cards.
+            Storage pricing uses live provider list prices for the selected region where available. Databricks DBU rates and final costs must still be validated against internal enterprise rate cards.
           </span>
         </div>
 
@@ -628,11 +629,11 @@ function App() {
 
             <ChartPanel title="Scenario comparison" icon={<Layers size={18} />}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={scenarioComparison} margin={{ top: 8, right: 14, left: 10, bottom: 32 }}>
+                <BarChart data={scenarioComparison} margin={{ top: 8, right: 14, left: 10, bottom: 24 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} height={42} tickMargin={8} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} height={34} tickMargin={8} />
                   <YAxis tickFormatter={(value) => shortMoney(value, estimate?.currency)} />
-                  <Tooltip formatter={(value) => money(Number(value), estimate?.currency)} />
+                  <Tooltip formatter={(value) => money(Number(value), estimate?.currency)} labelFormatter={(_, payload) => String(payload?.[0]?.payload?.name ?? "")} />
                   <Bar dataKey="value" radius={[6, 6, 0, 0]} fill="#2563eb" />
                 </BarChart>
               </ResponsiveContainer>
@@ -664,11 +665,11 @@ function App() {
 
             <ChartPanel title="Annualized estimate" icon={<Download size={18} />}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={annualData} margin={{ top: 8, right: 14, left: 10, bottom: 32 }}>
+                <BarChart data={annualData} margin={{ top: 8, right: 14, left: 10, bottom: 24 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" height={42} tickMargin={8} />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} height={34} tickMargin={8} />
                   <YAxis tickFormatter={(value) => shortMoney(value, estimate?.currency)} />
-                  <Tooltip formatter={(value) => money(Number(value), estimate?.currency)} />
+                  <Tooltip formatter={(value) => money(Number(value), estimate?.currency)} labelFormatter={(_, payload) => String(payload?.[0]?.payload?.name ?? "")} />
                   <Bar dataKey="value" radius={[6, 6, 0, 0]} fill="#7c3aed" />
                 </BarChart>
               </ResponsiveContainer>
@@ -790,7 +791,7 @@ function App() {
                   onChange={(value) => setSqlCompute({ ...sqlCompute, custom_dbu_per_hour: value })}
                 />
               ) : null}
-              <NumberField label="DBU rate (internal rate card)" value={sqlCompute.dbu_rate ?? pricing?.databricks.default_dbu_rate ?? 0} onChange={(value) => setSqlCompute({ ...sqlCompute, dbu_rate: value })} />
+              <NumberField label="DBU rate (internal or public list)" value={sqlCompute.dbu_rate ?? getDefaultSqlDbuRate(pricing, sqlCompute.warehouse_type)} onChange={(value) => setSqlCompute({ ...sqlCompute, dbu_rate: value })} />
               <NumberField label="Queries/month" value={sqlCompute.queries_per_month} onChange={(value) => setSqlCompute({ ...sqlCompute, queries_per_month: value })} />
               <NumberField
                 label="Avg query runtime minutes"
@@ -847,7 +848,7 @@ function App() {
                   onChange={(value) => setJobCompute({ ...jobCompute, custom_dbu_per_hour: value })}
                 />
               ) : null}
-              <NumberField label="Job DBU rate (internal rate card)" value={jobCompute.dbu_rate ?? pricing?.databricks.default_dbu_rate ?? 0} onChange={(value) => setJobCompute({ ...jobCompute, dbu_rate: value })} />
+              <NumberField label="Job DBU rate (internal or public list)" value={jobCompute.dbu_rate ?? getDefaultJobDbuRate(pricing)} onChange={(value) => setJobCompute({ ...jobCompute, dbu_rate: value })} />
               <NumberField label="Pipelines/jobs" value={jobCompute.number_of_jobs} onChange={(value) => setJobCompute({ ...jobCompute, number_of_jobs: value })} />
             </div>
           </section>
@@ -873,7 +874,7 @@ function App() {
                 disabled={!aiBi.enabled}
               />
               <NumberField label="AI/BI DBU/hour" value={aiBi.dbu_per_hour} onChange={(value) => setAiBi({ ...aiBi, dbu_per_hour: value })} disabled={!aiBi.enabled} />
-              <NumberField label="AI/BI DBU rate (internal rate card)" value={aiBi.dbu_rate ?? pricing?.databricks.default_dbu_rate ?? 0} onChange={(value) => setAiBi({ ...aiBi, dbu_rate: value })} disabled={!aiBi.enabled} />
+              <NumberField label="AI/BI DBU rate (internal or public list)" value={aiBi.dbu_rate ?? getDefaultAiBiDbuRate(pricing)} onChange={(value) => setAiBi({ ...aiBi, dbu_rate: value })} disabled={!aiBi.enabled} />
             </div>
           </section>
 
@@ -1009,10 +1010,10 @@ function KnowledgeBasePage({ onBack }: { onBack: () => void }) {
             rows={[
               ["Warehouse type", "Serverless, Pro, or Classic warehouse assumption."],
               ["Warehouse size", "Configured DBU/hour size, or custom DBU/hour when needed."],
-              ["DBU rate", "Configured price per DBU from the internal rate card. Public DBU rates are not fetched automatically in this version."],
+              ["DBU rate", "Editable price per DBU from an internal rate card or public Databricks list-pricing reference."],
               ["Queries/month", "Expected monthly interactive or dashboard query count."],
               ["Runtime minutes", "Average active compute time per query."],
-              ["Concurrent users", "Used when applying the optional concurrency multiplier."],
+              ["Concurrent users", "Use 0 for storage-only/archive estimates with no SQL access; otherwise enter expected concurrent users."],
               ["Auto-stop minutes", "Recorded as an operating assumption for warehouse behavior."]
             ]}
           />
@@ -1066,13 +1067,13 @@ function KnowledgeBasePage({ onBack }: { onBack: () => void }) {
           <FormulaExampleCard
             title="SQL warehouse compute"
             formula="DBU/hour x DBU rate x query hours"
-            example="8 DBU/hour x $0.70 x (300 queries x 4 min / 60) = $112/month"
+            example="2 DBU/hour x $0.70 x (300 queries x 4 min / 60) = $28/month"
             note="If the concurrency multiplier is enabled, query hours are multiplied by the configured concurrency factor."
           />
           <FormulaExampleCard
             title="Job and ingestion compute"
             formula="DBU/hour x DBU rate x job hours x number of jobs"
-            example="4 DBU/hour x $0.70 x (30 runs x 20 min / 60) x 2 jobs = $56/month"
+            example="4 DBU/hour x $0.26 x (30 runs x 20 min / 60) x 2 jobs = $20.80/month"
             note="Use this for scheduled ingestion, metadata scans, refresh jobs, or recurring report pipelines."
           />
           <FormulaExampleCard
@@ -1171,25 +1172,40 @@ function PricingSourcePanel({ estimate, pricing }: { estimate: EstimateResponse;
         <SourceCard
           title="Databricks SQL"
           status="manual"
+          badgeLabel="Manual / public ref"
           rows={[
-            ["Rate source", "Internal/manual DBU assumption"],
+            ["Rate source", "Editable DBU assumption"],
+            ["Reference", "Internal rate card or public Databricks list price"],
+            ["Applied source", labelize(String(sql.dbu_rate_source ?? "configured_sql_workload_rate"))],
             ["Warehouse type", labelize(String(sql.warehouse_type ?? ""))],
             ["Warehouse size", labelize(String(sql.warehouse_size ?? ""))],
             ["DBU/hour", String(sql.dbu_per_hour ?? 0)],
             ["DBU rate", formatUnitPrice(sql.dbu_rate, estimate.currency)]
           ]}
-          note="Validate DBU rates against the internal Databricks rate card before stakeholder sign-off."
+          note={
+            <>
+              Validate DBU rates against the internal Databricks rate card before stakeholder sign-off. Public reference:{" "}
+              <a href="https://www.databricks.com/product/pricing" target="_blank" rel="noreferrer">
+                Databricks pricing
+              </a>
+              .
+            </>
+          }
         />
         <SourceCard
           title="Jobs and optional AI/BI"
           status="manual"
+          badgeLabel="Manual / public ref"
           rows={[
-            ["Job rate source", "Internal/manual DBU assumption"],
+            ["Job rate source", "Editable DBU assumption"],
+            ["Reference", "Internal rate card or public Databricks list price"],
+            ["Applied source", labelize(String(jobs.dbu_rate_source ?? "configured_classic_jobs_rate"))],
             ["Job DBU/hour", String(jobs.dbu_per_hour ?? 0)],
             ["Job DBU rate", formatUnitPrice(jobs.dbu_rate, estimate.currency)],
             ["AI/BI enabled", String(aiBi.enabled ?? false)],
             ["AI/BI DBU rate", formatUnitPrice(aiBi.dbu_rate, estimate.currency)]
           ]}
+          note="These DBU rates are not treated as guaranteed enterprise prices. Use your internal committed-use or discount-adjusted rate where available."
         />
       </div>
     </div>
@@ -1199,19 +1215,21 @@ function PricingSourcePanel({ estimate, pricing }: { estimate: EstimateResponse;
 function SourceCard({
   title,
   status,
+  badgeLabel,
   rows,
   note
 }: {
   title: string;
   status: "live" | "fallback" | "manual";
+  badgeLabel?: string;
   rows: Array<[string, string]>;
-  note?: string;
+  note?: ReactNode;
 }) {
   return (
     <article className="source-card">
       <div className="source-card-topline">
         <h5>{title}</h5>
-        <span className={`source-badge ${status}`}>{labelize(status)}</span>
+        <span className={`source-badge ${status}`}>{badgeLabel ?? labelize(status)}</span>
       </div>
       <dl>
         {rows.map(([label, value]) => (
@@ -1509,6 +1527,17 @@ function shortScenarioName(key: string, fallback: string) {
   return names[key] ?? fallback;
 }
 
+function shorterScenarioLabel(key: string, fallback: string) {
+  const names: Record<string, string> = {
+    archive_only: "Arch.",
+    basic_query: "Basic",
+    scheduled_reporting: "Report",
+    self_service_analytics: "Analytics",
+    future_ai_bi: "AI/BI"
+  };
+  return names[key] ?? fallback;
+}
+
 function buildScenarioRecommendation(
   request: EstimateRequest,
   scenarios: Record<string, ScenarioConfig>
@@ -1579,6 +1608,18 @@ function getPricingRefreshStatus(pricing: PricingConfig): "refreshing" | "live" 
     return "refreshing";
   }
   return hasAnyLiveStoragePricing(pricing) ? "live" : "fallback";
+}
+
+function getDefaultSqlDbuRate(pricing: PricingConfig | null, warehouseType: SQLComputeInput["warehouse_type"]) {
+  return pricing?.databricks.dbu_rates?.sql?.[warehouseType] ?? pricing?.databricks.default_dbu_rate ?? 0;
+}
+
+function getDefaultJobDbuRate(pricing: PricingConfig | null) {
+  return pricing?.databricks.dbu_rates?.jobs?.classic ?? pricing?.databricks.dbu_rates?.jobs?.default ?? pricing?.databricks.default_dbu_rate ?? 0;
+}
+
+function getDefaultAiBiDbuRate(pricing: PricingConfig | null) {
+  return pricing?.databricks.dbu_rates?.ai_bi?.default ?? pricing?.databricks.default_dbu_rate ?? 0;
 }
 
 function hasAnyLiveStoragePricing(pricing: PricingConfig) {

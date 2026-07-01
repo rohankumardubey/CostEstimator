@@ -9,12 +9,12 @@ cloud:
       eu-west-1:
         display_name: Europe (Ireland)
         storage:
-          s3_standard:
+          s3_standard: &aws_s3_standard_storage
             display_name: S3 Standard
             price_per_gb_month: 0.023
             read_request_per_1000: 0.0004
             write_request_per_1000: 0.005
-          s3_intelligent_tiering:
+          s3_intelligent_tiering: &aws_s3_intelligent_tiering_storage
             display_name: S3 Intelligent-Tiering
             price_per_gb_month: 0.023
             monitoring_per_1000_objects: 0.0025
@@ -34,6 +34,48 @@ cloud:
             monitoring_per_1000_objects: 0.0025
             read_request_per_1000: 0.0004
             write_request_per_1000: 0.005
+      eu-west-3:
+        display_name: Europe (Paris)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      eu-central-1:
+        display_name: Europe (Frankfurt)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      eu-central-2:
+        display_name: Europe (Zurich)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      eu-north-1:
+        display_name: Europe (Stockholm)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      eu-south-1:
+        display_name: Europe (Milan)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      eu-south-2:
+        display_name: Europe (Spain)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
       us-east-1:
         display_name: US East (N. Virginia)
         storage:
@@ -48,6 +90,146 @@ cloud:
             monitoring_per_1000_objects: 0.0025
             read_request_per_1000: 0.0004
             write_request_per_1000: 0.005
+      us-east-2:
+        display_name: US East (Ohio)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      us-west-1:
+        display_name: US West (N. California)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      us-west-2:
+        display_name: US West (Oregon)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      ca-central-1:
+        display_name: Canada (Central)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      ca-west-1:
+        display_name: Canada West (Calgary)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      af-south-1:
+        display_name: Africa (Cape Town)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      ap-east-1:
+        display_name: Asia Pacific (Hong Kong)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      ap-south-1:
+        display_name: Asia Pacific (Mumbai)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      ap-south-2:
+        display_name: Asia Pacific (Hyderabad)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      ap-southeast-1:
+        display_name: Asia Pacific (Singapore)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      ap-southeast-2:
+        display_name: Asia Pacific (Sydney)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      ap-southeast-3:
+        display_name: Asia Pacific (Jakarta)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      ap-southeast-4:
+        display_name: Asia Pacific (Melbourne)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      ap-northeast-1:
+        display_name: Asia Pacific (Tokyo)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      ap-northeast-2:
+        display_name: Asia Pacific (Seoul)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      ap-northeast-3:
+        display_name: Asia Pacific (Osaka)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      me-south-1:
+        display_name: Middle East (Bahrain)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      me-central-1:
+        display_name: Middle East (UAE)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      il-central-1:
+        display_name: Israel (Tel Aviv)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
+      sa-east-1:
+        display_name: South America (Sao Paulo)
+        storage:
+          s3_standard:
+            <<: *aws_s3_standard_storage
+          s3_intelligent_tiering:
+            <<: *aws_s3_intelligent_tiering_storage
   azure:
     display_name: Azure
     default_region: uk-south
@@ -168,22 +350,32 @@ cloud:
 databricks:
   default_dbu_rate: 0.70
   concurrency_user_divisor: 10
+  dbu_rates:
+    sql:
+      classic: 0.22
+      pro: 0.55
+      serverless: 0.70
+    jobs:
+      classic: 0.26
+      serverless: 0.16
+    ai_bi:
+      default: 0.70
   sql_warehouses:
     xs:
-      display_name: XS
-      dbu_per_hour: 4
+      display_name: 2X-Small
+      dbu_per_hour: 1
     small:
       display_name: Small
-      dbu_per_hour: 8
+      dbu_per_hour: 2
     medium:
       display_name: Medium
-      dbu_per_hour: 16
+      dbu_per_hour: 4
     large:
       display_name: Large
-      dbu_per_hour: 32
+      dbu_per_hour: 8
     xl:
       display_name: XL
-      dbu_per_hour: 64
+      dbu_per_hour: 16
   jobs:
     small:
       display_name: Small job cluster
@@ -206,15 +398,16 @@ scenario_defaults:
     sql:
       queries_per_month: 0
       average_query_runtime_minutes: 0
-      concurrent_users: 1
+      concurrent_users: 0
+      auto_stop_minutes: 0
       warehouse_size: xs
       apply_concurrency_multiplier: false
     jobs:
       ingestion_frequency: monthly
-      job_runs_per_month: 1
-      average_job_runtime_minutes: 20
+      job_runs_per_month: 0
+      average_job_runtime_minutes: 0
       job_cluster_size: small
-      number_of_jobs: 1
+      number_of_jobs: 0
     ai_bi:
       enabled: false
   basic_query:

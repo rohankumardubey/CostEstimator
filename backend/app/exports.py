@@ -195,9 +195,9 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
         ["Storage source", str(_component_assumption(estimate, "Storage", "pricing_source"))],
         ["Storage status", str(_component_assumption(estimate, "Storage", "pricing_status"))],
         ["Storage note", _clip_text(str(_component_assumption(estimate, "Storage", "pricing_note")), 95)],
-        ["SQL DBU source", "Internal/manual DBU assumption"],
-        ["Job DBU source", "Internal/manual DBU assumption"],
-        ["AI/BI DBU source", "Internal/manual DBU assumption"],
+        ["SQL DBU source", str(_component_assumption(estimate, "Databricks SQL compute", "dbu_rate_source"))],
+        ["Job DBU source", str(_component_assumption(estimate, "Job/ingestion compute", "dbu_rate_source"))],
+        ["AI/BI DBU source", str(_component_assumption(estimate, "AI/BI optional layer", "dbu_rate_source"))],
     ]
     story.append(_dense_table(confidence_rows, body_style))
 
@@ -260,9 +260,9 @@ def _pricing_source_rows(export_request: ExportRequest) -> list[tuple[str, Any]]
         ("storage_read_request_per_1000", _component_assumption(estimate, "Storage", "read_request_per_1000")),
         ("storage_write_request_per_1000", _component_assumption(estimate, "Storage", "write_request_per_1000")),
         ("storage_monitoring_per_1000_objects", _component_assumption(estimate, "Storage", "monitoring_per_1000_objects")),
-        ("sql_dbu_rate_source", "Internal/manual DBU assumption"),
-        ("job_dbu_rate_source", "Internal/manual DBU assumption"),
-        ("ai_bi_dbu_rate_source", "Internal/manual DBU assumption"),
+        ("sql_dbu_rate_source", _component_assumption(estimate, "Databricks SQL compute", "dbu_rate_source")),
+        ("job_dbu_rate_source", _component_assumption(estimate, "Job/ingestion compute", "dbu_rate_source")),
+        ("ai_bi_dbu_rate_source", _component_assumption(estimate, "AI/BI optional layer", "dbu_rate_source")),
     ]
 
 

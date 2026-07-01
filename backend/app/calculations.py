@@ -15,7 +15,14 @@ from .models import (
     ScenarioComparisonResponse,
     StorageInput,
 )
-from .pricing import get_cloud_storage_config, get_job_dbu_per_hour, get_sql_dbu_per_hour
+from .pricing import (
+    get_ai_bi_dbu_rate,
+    get_cloud_storage_config,
+    get_job_dbu_per_hour,
+    get_job_dbu_rate,
+    get_sql_dbu_per_hour,
+    get_sql_dbu_rate,
+)
 
 
 def _round_money(value: float) -> float:
@@ -100,7 +107,11 @@ def calculate_sql_compute_cost(
         sql_compute.warehouse_size,
         sql_compute.custom_dbu_per_hour,
     )
-    dbu_rate = float(sql_compute.dbu_rate or pricing["databricks"]["default_dbu_rate"])
+    dbu_rate = float(
+        sql_compute.dbu_rate
+        if sql_compute.dbu_rate is not None
+        else get_sql_dbu_rate(pricing, sql_compute.warehouse_type.value)
+    )
     query_hours = sql_compute.queries_per_month * sql_compute.average_query_runtime_minutes / 60
     divisor = float(pricing["databricks"].get("concurrency_user_divisor", 10))
     concurrency_multiplier = (
@@ -118,6 +129,7 @@ def calculate_sql_compute_cost(
             "warehouse_size": sql_compute.warehouse_size,
             "dbu_per_hour": dbu_per_hour,
             "dbu_rate": dbu_rate,
+            "dbu_rate_source": "user_input" if sql_compute.dbu_rate is not None else "configured_sql_workload_rate",
             "queries_per_month": sql_compute.queries_per_month,
             "average_query_runtime_minutes": sql_compute.average_query_runtime_minutes,
             "monthly_query_hours": round(query_hours, 4),
@@ -139,7 +151,11 @@ def calculate_job_compute_cost(
         job_compute.job_cluster_size,
         job_compute.custom_dbu_per_hour,
     )
-    dbu_rate = float(job_compute.dbu_rate or pricing["databricks"]["default_dbu_rate"])
+    dbu_rate = float(
+        job_compute.dbu_rate
+        if job_compute.dbu_rate is not None
+        else get_job_dbu_rate(pricing)
+    )
     job_hours = (
         job_compute.job_runs_per_month
         * job_compute.average_job_runtime_minutes
@@ -159,13 +175,18 @@ def calculate_job_compute_cost(
             "job_cluster_size": job_compute.job_cluster_size,
             "dbu_per_hour": dbu_per_hour,
             "dbu_rate": dbu_rate,
+            "dbu_rate_source": "user_input" if job_compute.dbu_rate is not None else "configured_classic_jobs_rate",
             "monthly_job_hours": round(job_hours, 4),
         },
     )
 
 
 def calculate_ai_bi_cost(ai_bi: AIBIInput, pricing: dict[str, Any]) -> CostComponent:
-    dbu_rate = float(ai_bi.dbu_rate or pricing["databricks"]["default_dbu_rate"])
+    dbu_rate = float(
+        ai_bi.dbu_rate
+        if ai_bi.dbu_rate is not None
+        else get_ai_bi_dbu_rate(pricing)
+    )
     question_count = ai_bi.expected_users * ai_bi.questions_per_user_per_month
     question_hours = question_count * ai_bi.average_runtime_minutes_per_question / 60
     monthly_cost = ai_bi.dbu_per_hour * dbu_rate * question_hours if ai_bi.enabled else 0
@@ -182,6 +203,7 @@ def calculate_ai_bi_cost(ai_bi: AIBIInput, pricing: dict[str, Any]) -> CostCompo
             "monthly_question_hours": round(question_hours, 4) if ai_bi.enabled else 0,
             "dbu_per_hour": ai_bi.dbu_per_hour,
             "dbu_rate": dbu_rate,
+            "dbu_rate_source": "user_input" if ai_bi.dbu_rate is not None else "configured_ai_bi_rate",
         },
     )
 

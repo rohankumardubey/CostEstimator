@@ -61,7 +61,7 @@ class SQLComputeInput(BaseModel):
     dbu_rate: float | None = Field(default=None, ge=0)
     queries_per_month: int = Field(default=0, ge=0)
     average_query_runtime_minutes: float = Field(default=0, ge=0)
-    concurrent_users: int = Field(default=1, ge=1)
+    concurrent_users: int = Field(default=0, ge=0)
     auto_stop_minutes: int = Field(default=10, ge=0, le=240)
     usage_pattern: UsagePattern = UsagePattern.rare
     apply_concurrency_multiplier: bool = False

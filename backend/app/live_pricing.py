@@ -4,7 +4,6 @@ import copy
 import json
 import os
 import ssl
-import threading
 import time
 import urllib.error
 import urllib.parse
@@ -38,56 +37,50 @@ AWS_STORAGE_CLASSES = {
 
 _CACHE: dict[str, Any] | None = None
 _CACHE_EXPIRES_AT = 0.0
-_REFRESH_IN_PROGRESS = False
-_REFRESH_LOCK = threading.Lock()
 
 
-def load_live_pricing_config(base_config: dict[str, Any]) -> dict[str, Any]:
+def load_live_pricing_config(
+    base_config: dict[str, Any],
+    selected_region: tuple[str, str] | None = None,
+) -> dict[str, Any]:
     global _CACHE, _CACHE_EXPIRES_AT
 
     mode = os.getenv("PRICING_SOURCE", "config").lower()
     ttl_seconds = int(os.getenv("LIVE_PRICING_CACHE_SECONDS", "21600"))
     now = time.time()
 
-    if _CACHE is not None and now < _CACHE_EXPIRES_AT:
-        return copy.deepcopy(_CACHE)
-
-    if mode == "live" and _is_truthy(os.getenv("LIVE_PRICING_BACKGROUND_REFRESH", "true")):
-        if _CACHE is not None:
-            _start_background_refresh(base_config, ttl_seconds)
-            return copy.deepcopy(_CACHE)
-
-        config = _build_fallback_config(
-            base_config,
-            ttl_seconds,
-            "live",
-            "Serving configured fallback prices while live pricing refresh runs in the background.",
+    if _CACHE is None or now >= _CACHE_EXPIRES_AT:
+        note = (
+            "Live storage pricing is fetched only for the selected estimate region; "
+            "configured fallback prices are used for unselected regions."
+            if mode == "live"
+            else "Using repository or mounted pricing configuration."
         )
-        _CACHE = copy.deepcopy(config)
+        _CACHE = _build_fallback_config(base_config, ttl_seconds, mode, note)
         _CACHE_EXPIRES_AT = now + ttl_seconds
-        _start_background_refresh(base_config, ttl_seconds)
-        return config
 
-    config = _build_live_config(base_config, ttl_seconds) if mode == "live" else _build_fallback_config(
-        base_config,
-        ttl_seconds,
-        "config",
-        "Using repository or mounted pricing configuration.",
-    )
+    config = copy.deepcopy(_CACHE)
+
+    if mode == "live" and selected_region and not _selected_region_has_live_storage(config, *selected_region):
+        config = _build_live_config(base_config, ttl_seconds, selected_region, config)
+
     _CACHE = copy.deepcopy(config)
     _CACHE_EXPIRES_AT = now + ttl_seconds
     return config
 
 
-def _build_live_config(base_config: dict[str, Any], ttl_seconds: int) -> dict[str, Any]:
-    config = copy.deepcopy(base_config)
+def _build_live_config(
+    base_config: dict[str, Any],
+    ttl_seconds: int,
+    selected_region: tuple[str, str],
+    current_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    config = copy.deepcopy(current_config or base_config)
     _mark_all_storage_as_config_fallback(config)
-
     notes: list[str] = []
     timeout = float(os.getenv("LIVE_PRICING_TIMEOUT_SECONDS", "8"))
-    _apply_aws_storage_prices(config, timeout, notes)
-    _apply_azure_storage_prices(config, timeout, notes)
-    _apply_gcp_storage_prices(config, timeout, notes)
+    cloud_provider, region_key = selected_region
+    _apply_selected_storage_prices(config, timeout, notes, cloud_provider, region_key)
     config["pricing_source"] = {
         "mode": "live",
         "updated_at": datetime.now(UTC).isoformat(),
@@ -114,33 +107,6 @@ def _build_fallback_config(
     return config
 
 
-def _start_background_refresh(base_config: dict[str, Any], ttl_seconds: int) -> None:
-    global _REFRESH_IN_PROGRESS
-
-    with _REFRESH_LOCK:
-        if _REFRESH_IN_PROGRESS:
-            return
-        _REFRESH_IN_PROGRESS = True
-
-    def refresh() -> None:
-        global _CACHE, _CACHE_EXPIRES_AT, _REFRESH_IN_PROGRESS
-        try:
-            config = _build_live_config(base_config, ttl_seconds)
-            with _REFRESH_LOCK:
-                _CACHE = copy.deepcopy(config)
-                _CACHE_EXPIRES_AT = time.time() + ttl_seconds
-                _REFRESH_IN_PROGRESS = False
-        except Exception:
-            with _REFRESH_LOCK:
-                _REFRESH_IN_PROGRESS = False
-
-    threading.Thread(target=refresh, daemon=True).start()
-
-
-def _is_truthy(value: str) -> bool:
-    return value.lower() in {"1", "true", "yes", "on"}
-
-
 def clear_live_pricing_cache() -> None:
     global _CACHE, _CACHE_EXPIRES_AT
     _CACHE = None
@@ -160,28 +126,54 @@ def _mark_all_storage_as_config_fallback(config: dict[str, Any]) -> None:
                 )
 
 
-def _apply_aws_storage_prices(config: dict[str, Any], timeout: float, notes: list[str]) -> None:
-    aws_regions = config.get("cloud", {}).get("aws", {}).get("regions", {})
-    for region_key, region in aws_regions.items():
-        try:
-            offer = _fetch_aws_json(AWS_S3_PRICE_URL.format(region=region_key), timeout)
-        except Exception as exc:
-            notes.append(f"AWS S3 live pricing failed for {region_key}: {exc}")
-            continue
+def _selected_region_has_live_storage(config: dict[str, Any], cloud_provider: str, region_key: str) -> bool:
+    region = config.get("cloud", {}).get(cloud_provider, {}).get("regions", {}).get(region_key, {})
+    return any(storage.get("pricing_status") == "live" for storage in region.get("storage", {}).values())
 
-        for storage_key, aws_class in AWS_STORAGE_CLASSES.items():
-            storage = region.get("storage", {}).get(storage_key)
-            if not storage:
-                continue
-            price = _extract_aws_s3_storage_price(offer, aws_class)
-            if price is None:
-                notes.append(f"AWS S3 live price not found for {region_key}/{storage_key}.")
-                continue
-            storage["price_per_gb_month"] = price
-            storage["pricing_source"] = "aws_price_list_api"
-            storage["pricing_status"] = "live"
-            storage["pricing_source_url"] = AWS_S3_PRICE_URL.format(region=region_key)
-            storage["pricing_note"] = "AWS public Price List API, first storage tier."
+
+def _apply_selected_storage_prices(
+    config: dict[str, Any],
+    timeout: float,
+    notes: list[str],
+    cloud_provider: str,
+    region_key: str,
+) -> None:
+    if cloud_provider == "aws":
+        _apply_aws_storage_prices(config, timeout, notes, region_key)
+    elif cloud_provider == "azure":
+        _apply_azure_storage_prices(config, timeout, notes, region_key)
+    elif cloud_provider == "gcp":
+        _apply_gcp_storage_prices(config, timeout, notes, region_key)
+    else:
+        notes.append(f"Live pricing is not supported for cloud provider '{cloud_provider}'.")
+
+
+def _apply_aws_storage_prices(config: dict[str, Any], timeout: float, notes: list[str], region_key: str) -> None:
+    aws_regions = config.get("cloud", {}).get("aws", {}).get("regions", {})
+    region = aws_regions.get(region_key)
+    if not region:
+        notes.append(f"AWS S3 live pricing skipped: region '{region_key}' is not configured.")
+        return
+
+    try:
+        offer = _fetch_aws_json(AWS_S3_PRICE_URL.format(region=region_key), timeout)
+    except Exception as exc:
+        notes.append(f"AWS S3 live pricing failed for {region_key}: {exc}")
+        return
+
+    for storage_key, aws_class in AWS_STORAGE_CLASSES.items():
+        storage = region.get("storage", {}).get(storage_key)
+        if not storage:
+            continue
+        price = _extract_aws_s3_storage_price(offer, aws_class)
+        if price is None:
+            notes.append(f"AWS S3 live price not found for {region_key}/{storage_key}.")
+            continue
+        storage["price_per_gb_month"] = price
+        storage["pricing_source"] = "aws_price_list_api"
+        storage["pricing_status"] = "live"
+        storage["pricing_source_url"] = AWS_S3_PRICE_URL.format(region=region_key)
+        storage["pricing_note"] = "AWS public Price List API for the selected estimate region."
 
 
 def _extract_aws_s3_storage_price(offer: dict[str, Any], aws_class: str) -> float | None:
@@ -221,29 +213,33 @@ def _first_price_dimension(offer: dict[str, Any], sku: str, unit: str) -> float 
     return None
 
 
-def _apply_azure_storage_prices(config: dict[str, Any], timeout: float, notes: list[str]) -> None:
+def _apply_azure_storage_prices(config: dict[str, Any], timeout: float, notes: list[str], region_key: str) -> None:
     azure_regions = config.get("cloud", {}).get("azure", {}).get("regions", {})
-    for region_key, region in azure_regions.items():
-        arm_region = AZURE_REGION_NAMES.get(region_key, region_key.replace("-", ""))
-        try:
-            items = _fetch_azure_storage_items(arm_region, timeout)
-        except Exception as exc:
-            notes.append(f"Azure Retail Prices API failed for {region_key}: {exc}")
-            continue
+    region = azure_regions.get(region_key)
+    if not region:
+        notes.append(f"Azure live pricing skipped: region '{region_key}' is not configured.")
+        return
 
-        for storage_key, tier in AZURE_STORAGE_TIERS.items():
-            storage = region.get("storage", {}).get(storage_key)
-            if not storage:
-                continue
-            price = _extract_azure_adls_price(items, tier)
-            if price is None:
-                notes.append(f"Azure ADLS Gen2 live price not found for {region_key}/{storage_key}.")
-                continue
-            storage["price_per_gb_month"] = price
-            storage["pricing_source"] = "azure_retail_prices_api"
-            storage["pricing_status"] = "live"
-            storage["pricing_source_url"] = AZURE_RETAIL_PRICE_URL
-            storage["pricing_note"] = "Azure Retail Prices API, ADLS Gen2 hierarchical namespace LRS data stored."
+    arm_region = AZURE_REGION_NAMES.get(region_key, region_key.replace("-", ""))
+    try:
+        items = _fetch_azure_storage_items(arm_region, timeout)
+    except Exception as exc:
+        notes.append(f"Azure Retail Prices API failed for {region_key}: {exc}")
+        return
+
+    for storage_key, tier in AZURE_STORAGE_TIERS.items():
+        storage = region.get("storage", {}).get(storage_key)
+        if not storage:
+            continue
+        price = _extract_azure_adls_price(items, tier)
+        if price is None:
+            notes.append(f"Azure ADLS Gen2 live price not found for {region_key}/{storage_key}.")
+            continue
+        storage["price_per_gb_month"] = price
+        storage["pricing_source"] = "azure_retail_prices_api"
+        storage["pricing_status"] = "live"
+        storage["pricing_source_url"] = AZURE_RETAIL_PRICE_URL
+        storage["pricing_note"] = "Azure Retail Prices API for the selected estimate region."
 
 
 def _fetch_azure_storage_items(arm_region: str, timeout: float) -> list[dict[str, Any]]:
@@ -274,18 +270,19 @@ def _extract_azure_adls_price(items: list[dict[str, Any]], tier: str) -> float |
     return None
 
 
-def _apply_gcp_storage_prices(config: dict[str, Any], timeout: float, notes: list[str]) -> None:
+def _apply_gcp_storage_prices(config: dict[str, Any], timeout: float, notes: list[str], region_key: str) -> None:
     api_key = os.getenv("GCP_BILLING_API_KEY")
     gcp_regions = config.get("cloud", {}).get("gcp", {}).get("regions", {})
-    if not gcp_regions:
+    region = gcp_regions.get(region_key)
+    if not region:
+        notes.append(f"GCP live pricing skipped: region '{region_key}' is not configured.")
         return
     if not api_key:
-        notes.append("GCP live pricing requires GCP_BILLING_API_KEY; using config fallback for GCP.")
-        for region in gcp_regions.values():
-            for storage in region.get("storage", {}).values():
-                storage["pricing_note"] = "GCP live pricing requires GCP_BILLING_API_KEY."
+        notes.append(f"GCP live pricing requires GCP_BILLING_API_KEY; using config fallback for {region_key}.")
+        for storage in region.get("storage", {}).values():
+            storage["pricing_note"] = "GCP live pricing requires GCP_BILLING_API_KEY."
         return
-    notes.append("GCP live pricing API key detected, but SKU mapping is not enabled yet; using config fallback for GCP.")
+    notes.append(f"GCP live pricing API key detected, but SKU mapping is not enabled yet; using config fallback for {region_key}.")
     _ = timeout
     _ = GCP_CATALOG_URL
 

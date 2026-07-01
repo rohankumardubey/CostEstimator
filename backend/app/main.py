@@ -7,7 +7,12 @@ from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from .calculations import build_scenario_comparison, build_scenario_estimate
 from .exports import build_csv_summary, build_pdf_report
 from .models import EstimateRequest, ExportRequest
-from .pricing import list_scenarios, load_effective_pricing_config, refresh_effective_pricing_config
+from .pricing import (
+    list_scenarios,
+    load_effective_pricing_config,
+    load_effective_pricing_config_for_region,
+    refresh_effective_pricing_config,
+)
 
 
 app = FastAPI(
@@ -47,12 +52,20 @@ def scenarios() -> dict:
 
 @app.post("/estimate")
 def estimate(request: EstimateRequest):
-    return build_scenario_estimate(request, load_effective_pricing_config())
+    pricing = load_effective_pricing_config_for_region(
+        request.dataset.cloud_provider.value,
+        request.dataset.region,
+    )
+    return build_scenario_estimate(request, pricing)
 
 
 @app.post("/scenario-comparison")
 def scenario_comparison(request: EstimateRequest):
-    return build_scenario_comparison(request, load_effective_pricing_config())
+    pricing = load_effective_pricing_config_for_region(
+        request.dataset.cloud_provider.value,
+        request.dataset.region,
+    )
+    return build_scenario_comparison(request, pricing)
 
 
 @app.post("/export/json")

@@ -53,7 +53,22 @@ def test_sql_compute_formula_without_concurrency_multiplier() -> None:
     component = calculate_sql_compute_cost(sql, pricing())
 
     assert component.assumptions["monthly_query_hours"] == 10
-    assert component.monthly_cost == 56
+    assert component.monthly_cost == 14
+
+
+def test_sql_compute_allows_zero_concurrent_users_for_storage_only() -> None:
+    sql = SQLComputeInput(
+        warehouse_size="xs",
+        queries_per_month=0,
+        average_query_runtime_minutes=0,
+        concurrent_users=0,
+        auto_stop_minutes=0,
+    )
+
+    component = calculate_sql_compute_cost(sql, pricing())
+
+    assert component.assumptions["concurrent_users"] == 0
+    assert component.monthly_cost == 0
 
 
 def test_sql_compute_formula_with_concurrency_multiplier() -> None:
@@ -68,7 +83,7 @@ def test_sql_compute_formula_with_concurrency_multiplier() -> None:
     component = calculate_sql_compute_cost(sql, pricing())
 
     assert component.assumptions["concurrency_multiplier"] == 2.5
-    assert component.monthly_cost == 140
+    assert component.monthly_cost == 35
 
 
 def test_job_compute_formula() -> None:
@@ -82,7 +97,7 @@ def test_job_compute_formula() -> None:
     component = calculate_job_compute_cost(job, pricing())
 
     assert component.assumptions["monthly_job_hours"] == 20
-    assert component.monthly_cost == 112
+    assert component.monthly_cost == 41.6
 
 
 def test_ai_bi_disabled_excludes_cost() -> None:
@@ -136,9 +151,9 @@ def test_total_estimate_applies_buffer() -> None:
 
     estimate = calculate_total_estimate(request, pricing())
 
-    assert estimate.total_monthly_estimate == 6.5
-    assert estimate.estimate_with_buffer_monthly == 7.15
-    assert estimate.cost_per_gb_monthly == 0.07
+    assert estimate.total_monthly_estimate == 3.52
+    assert estimate.estimate_with_buffer_monthly == 3.87
+    assert estimate.cost_per_gb_monthly == 0.04
 
 
 def test_scenario_comparison_calculates_all_configured_scenarios() -> None:

@@ -99,13 +99,15 @@ make test
 
 Scenario defaults, warehouse sizes, DBU/hour assumptions, fallback prices, and non-price defaults live in `config/pricing.yaml`.
 
-When `PRICING_SOURCE=live`, the backend overlays live public storage list prices where possible:
+When `PRICING_SOURCE=live`, the backend overlays live public storage list prices for the selected estimate region where possible:
 
 - AWS S3 storage pricing from the AWS public Price List API.
 - Azure ADLS Gen2 storage pricing from the Azure Retail Prices API.
 - GCP storage pricing currently uses fallback config unless `GCP_BILLING_API_KEY` is provided and SKU mapping is enabled.
 
-Databricks DBU rates remain configured/manual assumptions. They should be replaced with internal Databricks enterprise rate card values before stakeholder use.
+Databricks DBU rates remain configured/manual assumptions. The default config separates SQL warehouse, jobs, and AI/BI DBU rates using public list-price references, but these should be replaced with internal Databricks enterprise rate-card values before stakeholder use.
+
+AWS includes a broad set of commercial regions in the dropdown. Config-mode fallback values are indicative placeholders; live mode fetches AWS public Price List values only for the currently selected estimate region and caches them.
 
 The config includes:
 
@@ -114,9 +116,9 @@ The config includes:
 - Storage price per GB-month.
 - Optional object monitoring costs per 1,000 objects.
 - Optional read and write request prices per 1,000 requests.
-- Databricks default DBU rate.
-- SQL warehouse sizes and DBU/hour.
-- Job cluster defaults and DBU/hour.
+- Databricks fallback DBU rate plus workload-specific SQL, jobs, and AI/BI DBU rates.
+- SQL warehouse sizes and DBU/hour assumptions.
+- Job cluster defaults and DBU/hour assumptions.
 - Scenario defaults for archive, query, reporting, analytics, and future AI/BI.
 
 Update this file when FinOps, platform, or data engineering teams refresh DBU rates, scenario defaults, or fallback assumptions. No backend code changes should be required for standard assumption updates.
