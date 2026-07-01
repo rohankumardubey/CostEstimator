@@ -21,31 +21,6 @@ The app is deterministic in its calculations and uses live public storage pricin
 - Tests: pytest unit and API tests for backend calculation behavior.
 - Containers: Dockerfiles for frontend and backend plus `docker-compose.yml`.
 
-```text
-.
-+-- backend/
-|   +-- app/
-|   |   +-- calculations.py
-|   |   +-- exports.py
-|   |   +-- main.py
-|   |   +-- models.py
-|   |   +-- pricing.py
-|   +-- tests/
-|   +-- Dockerfile
-|   +-- requirements.txt
-+-- config/
-|   +-- pricing.yaml
-+-- frontend/
-|   +-- src/
-|   +-- Dockerfile
-|   +-- nginx.conf
-|   +-- package.json
-+-- docker-compose.yml
-+-- Makefile
-+-- run.sh
-+-- README.md
-```
-
 ## Run locally without Docker
 
 Use the local runner when you want to start the FastAPI backend and Vite frontend directly on your machine:
