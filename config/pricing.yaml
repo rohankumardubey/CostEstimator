@@ -1,0 +1,327 @@
+currency: USD
+default_buffer_percentage: 15
+
+cloud:
+  aws:
+    display_name: AWS
+    default_region: eu-west-1
+    regions:
+      eu-west-1:
+        display_name: Europe (Ireland)
+        storage:
+          s3_standard:
+            display_name: S3 Standard
+            price_per_gb_month: 0.023
+            read_request_per_1000: 0.0004
+            write_request_per_1000: 0.005
+          s3_intelligent_tiering:
+            display_name: S3 Intelligent-Tiering
+            price_per_gb_month: 0.023
+            monitoring_per_1000_objects: 0.0025
+            read_request_per_1000: 0.0004
+            write_request_per_1000: 0.005
+      eu-west-2:
+        display_name: Europe (London)
+        storage:
+          s3_standard:
+            display_name: S3 Standard
+            price_per_gb_month: 0.024
+            read_request_per_1000: 0.0004
+            write_request_per_1000: 0.005
+          s3_intelligent_tiering:
+            display_name: S3 Intelligent-Tiering
+            price_per_gb_month: 0.024
+            monitoring_per_1000_objects: 0.0025
+            read_request_per_1000: 0.0004
+            write_request_per_1000: 0.005
+      us-east-1:
+        display_name: US East (N. Virginia)
+        storage:
+          s3_standard:
+            display_name: S3 Standard
+            price_per_gb_month: 0.023
+            read_request_per_1000: 0.0004
+            write_request_per_1000: 0.005
+          s3_intelligent_tiering:
+            display_name: S3 Intelligent-Tiering
+            price_per_gb_month: 0.023
+            monitoring_per_1000_objects: 0.0025
+            read_request_per_1000: 0.0004
+            write_request_per_1000: 0.005
+  azure:
+    display_name: Azure
+    default_region: uk-south
+    regions:
+      uk-south:
+        display_name: UK South
+        storage:
+          adls_hot:
+            display_name: ADLS Gen2 Hot
+            price_per_gb_month: 0.020
+            read_request_per_1000: 0.0004
+            write_request_per_1000: 0.005
+          adls_cool:
+            display_name: ADLS Gen2 Cool
+            price_per_gb_month: 0.010
+            read_request_per_1000: 0.001
+            write_request_per_1000: 0.01
+          adls_archive:
+            display_name: ADLS Gen2 Archive
+            price_per_gb_month: 0.002
+            read_request_per_1000: 0.005
+            write_request_per_1000: 0.02
+      west-europe:
+        display_name: West Europe
+        storage:
+          adls_hot:
+            display_name: ADLS Gen2 Hot
+            price_per_gb_month: 0.020
+            read_request_per_1000: 0.0004
+            write_request_per_1000: 0.005
+          adls_cool:
+            display_name: ADLS Gen2 Cool
+            price_per_gb_month: 0.010
+            read_request_per_1000: 0.001
+            write_request_per_1000: 0.01
+          adls_archive:
+            display_name: ADLS Gen2 Archive
+            price_per_gb_month: 0.002
+            read_request_per_1000: 0.005
+            write_request_per_1000: 0.02
+      east-us:
+        display_name: East US
+        storage:
+          adls_hot:
+            display_name: ADLS Gen2 Hot
+            price_per_gb_month: 0.018
+            read_request_per_1000: 0.0004
+            write_request_per_1000: 0.005
+          adls_cool:
+            display_name: ADLS Gen2 Cool
+            price_per_gb_month: 0.009
+            read_request_per_1000: 0.001
+            write_request_per_1000: 0.01
+          adls_archive:
+            display_name: ADLS Gen2 Archive
+            price_per_gb_month: 0.002
+            read_request_per_1000: 0.005
+            write_request_per_1000: 0.02
+  gcp:
+    display_name: GCP
+    default_region: europe-west2
+    regions:
+      europe-west2:
+        display_name: Europe West 2 (London)
+        storage:
+          standard:
+            display_name: Cloud Storage Standard
+            price_per_gb_month: 0.020
+            read_request_per_1000: 0.0004
+            write_request_per_1000: 0.005
+          nearline:
+            display_name: Cloud Storage Nearline
+            price_per_gb_month: 0.010
+            read_request_per_1000: 0.001
+            write_request_per_1000: 0.01
+          coldline:
+            display_name: Cloud Storage Coldline
+            price_per_gb_month: 0.004
+            read_request_per_1000: 0.002
+            write_request_per_1000: 0.02
+      europe-west1:
+        display_name: Europe West 1 (Belgium)
+        storage:
+          standard:
+            display_name: Cloud Storage Standard
+            price_per_gb_month: 0.020
+            read_request_per_1000: 0.0004
+            write_request_per_1000: 0.005
+          nearline:
+            display_name: Cloud Storage Nearline
+            price_per_gb_month: 0.010
+            read_request_per_1000: 0.001
+            write_request_per_1000: 0.01
+          coldline:
+            display_name: Cloud Storage Coldline
+            price_per_gb_month: 0.004
+            read_request_per_1000: 0.002
+            write_request_per_1000: 0.02
+      us-central1:
+        display_name: US Central 1 (Iowa)
+        storage:
+          standard:
+            display_name: Cloud Storage Standard
+            price_per_gb_month: 0.020
+            read_request_per_1000: 0.0004
+            write_request_per_1000: 0.005
+          nearline:
+            display_name: Cloud Storage Nearline
+            price_per_gb_month: 0.010
+            read_request_per_1000: 0.001
+            write_request_per_1000: 0.01
+          coldline:
+            display_name: Cloud Storage Coldline
+            price_per_gb_month: 0.004
+            read_request_per_1000: 0.002
+            write_request_per_1000: 0.02
+
+databricks:
+  default_dbu_rate: 0.70
+  concurrency_user_divisor: 10
+  sql_warehouses:
+    xs:
+      display_name: XS
+      dbu_per_hour: 4
+    small:
+      display_name: Small
+      dbu_per_hour: 8
+    medium:
+      display_name: Medium
+      dbu_per_hour: 16
+    large:
+      display_name: Large
+      dbu_per_hour: 32
+    xl:
+      display_name: XL
+      dbu_per_hour: 64
+  jobs:
+    small:
+      display_name: Small job cluster
+      dbu_per_hour: 4
+    medium:
+      display_name: Medium job cluster
+      dbu_per_hour: 8
+    large:
+      display_name: Large job cluster
+      dbu_per_hour: 16
+
+scenario_defaults:
+  archive_only:
+    title: Archive-only
+    description: Storage-led estimate with no persistent SQL warehouse.
+    storage_class_by_cloud:
+      aws: s3_intelligent_tiering
+      azure: adls_cool
+      gcp: nearline
+    sql:
+      queries_per_month: 0
+      average_query_runtime_minutes: 0
+      concurrent_users: 1
+      warehouse_size: xs
+      apply_concurrency_multiplier: false
+    jobs:
+      ingestion_frequency: monthly
+      job_runs_per_month: 1
+      average_job_runtime_minutes: 20
+      job_cluster_size: small
+      number_of_jobs: 1
+    ai_bi:
+      enabled: false
+  basic_query:
+    title: Basic query
+    description: Storage plus low-frequency SQL access for occasional business queries.
+    storage_class_by_cloud:
+      aws: s3_standard
+      azure: adls_hot
+      gcp: standard
+    sql:
+      queries_per_month: 50
+      average_query_runtime_minutes: 3
+      concurrent_users: 3
+      warehouse_size: xs
+      apply_concurrency_multiplier: false
+    jobs:
+      ingestion_frequency: monthly
+      job_runs_per_month: 1
+      average_job_runtime_minutes: 30
+      job_cluster_size: small
+      number_of_jobs: 1
+    ai_bi:
+      enabled: false
+  scheduled_reporting:
+    title: Scheduled reporting
+    description: Storage, recurring jobs, dashboard refreshes, and light warehouse usage.
+    storage_class_by_cloud:
+      aws: s3_standard
+      azure: adls_hot
+      gcp: standard
+    sql:
+      queries_per_month: 250
+      average_query_runtime_minutes: 4
+      concurrent_users: 5
+      warehouse_size: small
+      apply_concurrency_multiplier: false
+    jobs:
+      ingestion_frequency: daily
+      job_runs_per_month: 30
+      average_job_runtime_minutes: 20
+      job_cluster_size: small
+      number_of_jobs: 2
+    ai_bi:
+      enabled: false
+  self_service_analytics:
+    title: Self-service analytics
+    description: Higher query volume, more users, and larger SQL compute.
+    storage_class_by_cloud:
+      aws: s3_standard
+      azure: adls_hot
+      gcp: standard
+    sql:
+      queries_per_month: 1500
+      average_query_runtime_minutes: 5
+      concurrent_users: 20
+      warehouse_size: medium
+      apply_concurrency_multiplier: true
+    jobs:
+      ingestion_frequency: daily
+      job_runs_per_month: 30
+      average_job_runtime_minutes: 35
+      job_cluster_size: medium
+      number_of_jobs: 3
+    ai_bi:
+      enabled: false
+  future_ai_bi:
+    title: Future AI/BI or Genie-style usage
+    description: Optional future layer that adds natural-language question workloads.
+    storage_class_by_cloud:
+      aws: s3_standard
+      azure: adls_hot
+      gcp: standard
+    sql:
+      queries_per_month: 1000
+      average_query_runtime_minutes: 5
+      concurrent_users: 25
+      warehouse_size: medium
+      apply_concurrency_multiplier: true
+    jobs:
+      ingestion_frequency: daily
+      job_runs_per_month: 30
+      average_job_runtime_minutes: 35
+      job_cluster_size: medium
+      number_of_jobs: 3
+    ai_bi:
+      enabled: true
+      expected_users: 25
+      questions_per_user_per_month: 20
+      average_runtime_minutes_per_question: 2
+      dbu_per_hour: 16
+
+sample_dataset:
+  team_name: Example Data Team
+  brand_or_dataset_name: Legacy collaboration archive
+  cloud_provider: aws
+  region: eu-west-1
+  total_data_size_gb: 31.13
+  file_count: 7497
+  zip_archive_file_count: 4771
+  structured_file_count: 12
+  document_file_count: 2714
+  annual_growth_percentage: 10
+  number_of_environments: 1
+  replication_factor: 1
+  dominant_category: Archive/document-heavy
+  suggested_scenarios:
+    - archive_only
+    - basic_query
+
+disclaimer: This estimate is indicative and depends on actual usage, enterprise pricing, committed-use discounts, cloud provider charges, and Databricks workspace configuration. Final numbers should be validated with FinOps/platform owners.

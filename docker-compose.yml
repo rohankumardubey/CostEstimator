@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      PRICING_CONFIG_PATH: /app/config/pricing.yaml
+      PRICING_SOURCE: live
+      LIVE_PRICING_BACKGROUND_REFRESH: "true"
+      LIVE_PRICING_CACHE_SECONDS: 21600
+      LIVE_PRICING_TIMEOUT_SECONDS: 8
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 2s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_started

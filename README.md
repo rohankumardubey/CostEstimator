@@ -1,0 +1,256 @@
+# Databricks Cost Estimator
+
+A reusable internal web app for indicative Databricks and cloud storage cost estimation. It is designed for teams moving legacy data or analytical datasets into cloud storage plus Databricks architecture.
+
+The app is deterministic in its calculations and uses live public storage pricing where available. Databricks DBU rates remain explicit assumptions because enterprise rate cards and committed discounts vary by account.
+
+## Use cases
+
+- Archive-only storage estimates.
+- Basic query access for occasional business users.
+- Scheduled reporting and dashboard refreshes.
+- Self-service analytics with higher query volume.
+- Optional future AI/BI or Genie-style usage.
+- Manual metadata-based estimation without uploading raw dataset files.
+
+## Architecture
+
+- Frontend: React, TypeScript, Vite, Recharts, lucide-react.
+- Backend: Python FastAPI with Pydantic validation.
+- Config: `config/pricing.yaml`.
+- Tests: pytest unit and API tests for backend calculation behavior.
+- Containers: Dockerfiles for frontend and backend plus `docker-compose.yml`.
+
+```text
+.
++-- backend/
+|   +-- app/
+|   |   +-- calculations.py
+|   |   +-- exports.py
+|   |   +-- main.py
+|   |   +-- models.py
+|   |   +-- pricing.py
+|   +-- tests/
+|   +-- Dockerfile
+|   +-- requirements.txt
++-- config/
+|   +-- pricing.yaml
++-- frontend/
+|   +-- src/
+|   +-- Dockerfile
+|   +-- nginx.conf
+|   +-- package.json
++-- docker-compose.yml
++-- Makefile
++-- run.sh
++-- README.md
+```
+
+## Run locally without Docker
+
+Use the local runner when you want to start the FastAPI backend and Vite frontend directly on your machine:
+
+```bash
+./run.sh
+```
+
+Then open:
+
+- Frontend: http://127.0.0.1:5173
+- Backend API docs: http://127.0.0.1:8000/docs
+- Health check: http://127.0.0.1:8000/health
+
+The script creates or reuses the root `.venv`, installs backend dependencies when `backend/requirements.txt` changes, installs frontend dependencies when needed, starts both services, and stops both when you press `Ctrl+C`.
+
+You can also run:
+
+```bash
+make local
+```
+
+## Run locally with Docker
+
+```bash
+docker-compose up --build
+```
+
+Then open:
+
+- Frontend: http://localhost:5173
+- Backend API docs: http://localhost:8000/docs
+- Health check: http://localhost:8000/health
+
+Docker remains useful when you want the containerized setup, closer deployment parity, or a clean isolated environment.
+
+## Tests
+
+```bash
+cd backend
+PYTHONPATH=. pytest
+```
+
+Or from the repository root:
+
+```bash
+make test
+```
+
+## Pricing configuration and live pricing
+
+Scenario defaults, warehouse sizes, DBU/hour assumptions, fallback prices, and non-price defaults live in `config/pricing.yaml`.
+
+When `PRICING_SOURCE=live`, the backend overlays live public storage list prices where possible:
+
+- AWS S3 storage pricing from the AWS public Price List API.
+- Azure ADLS Gen2 storage pricing from the Azure Retail Prices API.
+- GCP storage pricing currently uses fallback config unless `GCP_BILLING_API_KEY` is provided and SKU mapping is enabled.
+
+Databricks DBU rates remain configured/manual assumptions. They should be replaced with internal Databricks enterprise rate card values before stakeholder use.
+
+The config includes:
+
+- Currency and default buffer percentage.
+- Cloud providers, regions, and storage classes.
+- Storage price per GB-month.
+- Optional object monitoring costs per 1,000 objects.
+- Optional read and write request prices per 1,000 requests.
+- Databricks default DBU rate.
+- SQL warehouse sizes and DBU/hour.
+- Job cluster defaults and DBU/hour.
+- Scenario defaults for archive, query, reporting, analytics, and future AI/BI.
+
+Update this file when FinOps, platform, or data engineering teams refresh DBU rates, scenario defaults, or fallback assumptions. No backend code changes should be required for standard assumption updates.
+
+## Formula summary
+
+Storage uses an average-year growth adjustment:
+
+```text
+effective_gb = data_size_gb * (1 + annual_growth_percentage / 100 / 2)
+
+monthly_storage_cost =
+  effective_gb
+  * storage_price_per_gb_month
+  * replication_factor
+  * environment_multiplier
+  + object_monitoring_cost
+  + request_cost
+```
+
+SQL compute:
+
+```text
+monthly_query_hours =
+  queries_per_month * average_query_runtime_minutes / 60
+
+monthly_sql_compute_cost =
+  warehouse_dbu_per_hour
+  * dbu_rate
+  * monthly_query_hours
+  * optional_concurrency_multiplier
+```
+
+Job compute:
+
+```text
+monthly_job_hours =
+  job_runs_per_month
+  * average_job_runtime_minutes / 60
+  * number_of_jobs
+
+monthly_job_compute_cost =
+  job_cluster_dbu_per_hour
+  * job_dbu_rate
+  * monthly_job_hours
+```
+
+AI/BI is disabled by default:
+
+```text
+monthly_ai_bi_hours =
+  expected_users
+  * questions_per_user_per_month
+  * average_runtime_minutes_per_question / 60
+
+monthly_ai_bi_cost =
+  dbu_per_hour * dbu_rate * monthly_ai_bi_hours
+```
+
+Buffered estimate:
+
+```text
+estimate_with_buffer = total_estimate * (1 + buffer_percentage / 100)
+```
+
+## Dataset metadata entry
+
+The app is designed for manual entry of aggregate dataset metadata:
+
+- Total data size in GB.
+- Total file count.
+- Archive, structured, and document file counts.
+- Annual growth percentage.
+- Environment count.
+- Replication or backup factor.
+
+Do not enter raw file contents, source document text, or sensitive business data.
+
+## Save and load estimates
+
+Use the UI `Save` button to download an editable JSON file that contains the current inputs and selected scenario. Use `Load` to restore that file later and continue editing in the app.
+
+After loading or saving, the UI shows a confirmation message. Use `Reset` to restore the sample defaults and start a fresh estimate.
+
+This is local-only. The app does not store saved estimates on the backend, and no database or user account is required.
+
+## Security and privacy
+
+- Do not upload actual source documents, raw dataset files, or sensitive business content.
+- Enter aggregate metadata only.
+- The UI includes a masking option for names in generated reports.
+
+## API endpoints
+
+- `GET /health`
+- `GET /pricing-config`
+- `POST /pricing-config/refresh`
+- `GET /scenarios`
+- `POST /estimate`
+- `POST /scenario-comparison`
+- `POST /export/json`
+- `POST /export/csv`
+- `POST /export/pdf`
+
+## Sample default data
+
+The UI loads sample defaults for:
+
+- Dataset: Legacy collaboration archive
+- Total size: 31.13 GB
+- Total files: 7,497
+- ZIP files: 4,771
+- Structured files: 12
+- Dominant category: archive/document-heavy
+- Suggested scenarios: Archive-only or Basic query
+
+These are placeholders only. The estimator remains generic for platform, analytics, operations, product, and other data teams.
+
+## Limitations
+
+- Estimates are indicative, not invoices or official quotes.
+- Databricks DBU rates are assumptions until replaced with internal rate cards.
+- Auto-stop behavior is captured as an assumption but not simulated as idle warehouse runtime.
+- No user authentication or persistence is included in this first version.
+
+## Deployment notes
+
+- Replace DBU rates and fallback assumptions in `config/pricing.yaml` before stakeholder use.
+- Put the backend behind standard internal authentication and network controls.
+- Set `PRICING_CONFIG_PATH` if pricing config is mounted outside the container image.
+- Set `PRICING_SOURCE=live` to enable live public storage pricing overlay.
+- Add durable persistence only if teams need saved estimates or audit history.
+- Add CI for `pytest`, frontend build, and container image scanning.
+
+## Screenshots
+
+Screenshots can be added here after deployment in the target internal environment.
