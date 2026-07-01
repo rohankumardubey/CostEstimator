@@ -5,6 +5,7 @@ from app.calculations import (
     build_estimate_warnings,
     calculate_confidence,
     calculate_ai_bi_cost,
+    calculate_cross_region_transfer_cost,
     calculate_job_compute_cost,
     calculate_sql_compute_cost,
     calculate_storage_cost,
@@ -12,6 +13,7 @@ from app.calculations import (
 )
 from app.models import (
     AIBIInput,
+    CrossRegionTransferInput,
     DatasetInput,
     EstimateRequest,
     JobComputeInput,
@@ -31,6 +33,7 @@ def test_storage_cost_includes_growth_environment_replication_and_monitoring() -
         file_count=2000,
         annual_growth_percentage=20,
         number_of_environments=2,
+        redundancy_model="backup_copy",
         replication_factor=3,
     )
     storage = StorageInput(storage_class="s3_intelligent_tiering")
@@ -39,6 +42,7 @@ def test_storage_cost_includes_growth_environment_replication_and_monitoring() -
 
     assert component.monthly_cost == 15.21
     assert component.assumptions["effective_gb_with_growth"] == 110
+    assert component.assumptions["redundancy_model"] == "backup_copy"
 
 
 def test_sql_compute_formula_without_concurrency_multiplier() -> None:
@@ -129,6 +133,26 @@ def test_ai_bi_enabled_formula() -> None:
 
     assert component.assumptions["monthly_question_hours"] == 20
     assert component.monthly_cost == 224
+
+
+def test_cross_region_transfer_formula_with_one_time_and_amortization() -> None:
+    dataset = DatasetInput(cloud_provider="aws", region="eu-west-1", total_data_size_gb=300)
+    transfer = CrossRegionTransferInput(
+        enabled=True,
+        destination_region="eu-west-2",
+        initial_replication_gb=300,
+        monthly_changed_data_gb=30,
+        monthly_cross_region_read_gb=20,
+        amortize_initial_months=12,
+    )
+
+    component = calculate_cross_region_transfer_cost(dataset, transfer, pricing())
+
+    assert component.assumptions["price_per_gb"] == 0.02
+    assert component.assumptions["one_time_initial_replication_cost"] == 6
+    assert component.assumptions["recurring_monthly_transfer_cost"] == 1
+    assert component.assumptions["amortized_initial_monthly_cost"] == 0.5
+    assert component.monthly_cost == 1.5
 
 
 def test_total_estimate_applies_buffer() -> None:
@@ -222,3 +246,52 @@ def test_total_estimate_contains_confidence_metadata() -> None:
 
     assert 0 <= estimate.confidence_score <= 100
     assert estimate.confidence_level in {"High", "Medium", "Low"}
+
+
+def test_total_estimate_exposes_redundancy_assumptions() -> None:
+    request = EstimateRequest(
+        scenario_key="archive_only",
+        dataset=DatasetInput(
+            total_data_size_gb=100,
+            file_count=1000,
+            redundancy_model="backup_copy",
+            replication_factor=2,
+        ),
+        storage=StorageInput(storage_class="s3_standard"),
+        sql_compute=SQLComputeInput(),
+        job_compute=JobComputeInput(average_job_runtime_minutes=0),
+        ai_bi=AIBIInput(enabled=False),
+    )
+
+    estimate = calculate_total_estimate(request, pricing())
+
+    assert estimate.assumptions["redundancy_model"] == "backup_copy"
+    assert estimate.assumptions["replication_factor"] == 2
+
+
+def test_cross_region_dr_storage_copy_sets_minimum_two_storage_copies() -> None:
+    request = EstimateRequest(
+        scenario_key="archive_only",
+        dataset=DatasetInput(
+            total_data_size_gb=100,
+            file_count=1000,
+            redundancy_model="single_copy",
+            replication_factor=1,
+        ),
+        storage=StorageInput(storage_class="s3_standard"),
+        sql_compute=SQLComputeInput(),
+        job_compute=JobComputeInput(average_job_runtime_minutes=0),
+        ai_bi=AIBIInput(enabled=False),
+        cross_region_transfer=CrossRegionTransferInput(
+            enabled=True,
+            include_dr_storage_copy=True,
+            destination_region="eu-west-2",
+        ),
+    )
+
+    estimate = calculate_total_estimate(request, pricing())
+    storage = next(component for component in estimate.components if component.label == "Storage")
+
+    assert estimate.assumptions["configured_replication_factor"] == 1
+    assert estimate.assumptions["replication_factor"] == 2
+    assert storage.assumptions["replication_factor"] == 2

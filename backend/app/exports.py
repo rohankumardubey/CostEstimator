@@ -38,6 +38,8 @@ def build_csv_summary(export_request: ExportRequest) -> str:
     writer.writerow(["estimate", "monthly_sql_compute_cost", estimate.monthly_sql_compute_cost])
     writer.writerow(["estimate", "monthly_job_compute_cost", estimate.monthly_job_compute_cost])
     writer.writerow(["estimate", "monthly_ai_bi_cost", estimate.monthly_ai_bi_cost])
+    writer.writerow(["estimate", "monthly_cross_region_dr_cost", estimate.monthly_cross_region_transfer_cost])
+    writer.writerow(["estimate", "one_time_cross_region_dr_cost", estimate.one_time_cross_region_transfer_cost])
     writer.writerow(["estimate", "total_monthly_estimate", estimate.total_monthly_estimate])
     writer.writerow(["estimate", "total_annual_estimate", estimate.total_annual_estimate])
     writer.writerow(["estimate", "estimate_with_buffer_monthly", estimate.estimate_with_buffer_monthly])
@@ -132,20 +134,14 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
     ]
 
     dataset_rows = [
-        ["Team", _masked_if_needed(request.dataset.team_name, request.dataset.mask_names_in_report)],
-        [
-            "Dataset",
-            _masked_if_needed(
-                request.dataset.brand_or_dataset_name,
-                request.dataset.mask_names_in_report,
-            ),
-        ],
+        ["Team", request.dataset.team_name],
+        ["Dataset", request.dataset.brand_or_dataset_name],
         ["Scenario", estimate.scenario_title],
         ["Cloud / region", f"{request.dataset.cloud_provider.value.upper()} / {request.dataset.region}"],
         ["Data size", f"{request.dataset.total_data_size_gb:,.2f} GB"],
         ["Files", f"{request.dataset.file_count:,}"],
         ["Archive / structured / document files", f"{request.dataset.zip_archive_file_count:,} / {request.dataset.structured_file_count:,} / {request.dataset.document_file_count:,}"],
-        ["Growth / envs / replication", f"{request.dataset.annual_growth_percentage:g}% / {request.dataset.number_of_environments} / {request.dataset.replication_factor:g}"],
+        ["Growth / envs / redundancy", f"{request.dataset.annual_growth_percentage:g}% / {request.dataset.number_of_environments} / {request.dataset.redundancy_model.value.replace('_', ' ')} ({request.dataset.replication_factor:g}x)"],
     ]
 
     kpi_rows = [
@@ -154,6 +150,8 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
         ["SQL compute", _money(estimate.monthly_sql_compute_cost, estimate.currency), _money(estimate.monthly_sql_compute_cost * 12, estimate.currency)],
         ["Job compute", _money(estimate.monthly_job_compute_cost, estimate.currency), _money(estimate.monthly_job_compute_cost * 12, estimate.currency)],
         ["AI/BI optional", _money(estimate.monthly_ai_bi_cost, estimate.currency), _money(estimate.monthly_ai_bi_cost * 12, estimate.currency)],
+        ["Cross-region DR", _money(estimate.monthly_cross_region_transfer_cost, estimate.currency), _money(estimate.monthly_cross_region_transfer_cost * 12, estimate.currency)],
+        ["One-time DR transfer", _money(estimate.one_time_cross_region_transfer_cost, estimate.currency), "-"],
         ["Total", _money(estimate.total_monthly_estimate, estimate.currency), _money(estimate.total_annual_estimate, estimate.currency)],
         [f"With {estimate.buffer_percentage:g}% buffer", _money(estimate.estimate_with_buffer_monthly, estimate.currency), _money(estimate.estimate_with_buffer_annual, estimate.currency)],
     ]
@@ -198,6 +196,8 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
         ["SQL DBU source", str(_component_assumption(estimate, "Databricks SQL compute", "dbu_rate_source"))],
         ["Job DBU source", str(_component_assumption(estimate, "Job/ingestion compute", "dbu_rate_source"))],
         ["AI/BI DBU source", str(_component_assumption(estimate, "AI/BI optional layer", "dbu_rate_source"))],
+        ["DR source", str(_component_assumption(estimate, "Cross-region DR", "price_source"))],
+        ["DR status", str(_component_assumption(estimate, "Cross-region DR", "pricing_status"))],
     ]
     story.append(_dense_table(confidence_rows, body_style))
 
@@ -216,6 +216,9 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
         ["Job DBU rate", str(_component_assumption(estimate, "Job/ingestion compute", "dbu_rate"))],
         ["Job runs/month", f"{request.job_compute.job_runs_per_month:,}"],
         ["AI/BI enabled", "Yes" if request.ai_bi.enabled else "No"],
+        ["Cross-region DR enabled", "Yes" if request.cross_region_transfer.enabled else "No"],
+        ["Cross-region DR route", f"{request.dataset.region} -> {request.cross_region_transfer.destination_region or 'not selected'}"],
+        ["Cross-region transfer price/GB", str(_component_assumption(estimate, "Cross-region DR", "price_per_gb"))],
         ["Cost per GB/month", _money(estimate.cost_per_gb_monthly, estimate.currency)],
         ["Cost per 1,000 files/month", _money(estimate.cost_per_1000_files_monthly, estimate.currency)],
     ]
@@ -260,6 +263,11 @@ def _pricing_source_rows(export_request: ExportRequest) -> list[tuple[str, Any]]
         ("storage_read_request_per_1000", _component_assumption(estimate, "Storage", "read_request_per_1000")),
         ("storage_write_request_per_1000", _component_assumption(estimate, "Storage", "write_request_per_1000")),
         ("storage_monitoring_per_1000_objects", _component_assumption(estimate, "Storage", "monitoring_per_1000_objects")),
+        ("cross_region_dr_enabled", _component_assumption(estimate, "Cross-region DR", "enabled")),
+        ("cross_region_dr_route", f"{_component_assumption(estimate, 'Cross-region DR', 'source_region')} -> {_component_assumption(estimate, 'Cross-region DR', 'destination_region')}"),
+        ("cross_region_dr_price_per_gb", _component_assumption(estimate, "Cross-region DR", "price_per_gb")),
+        ("cross_region_dr_price_source", _component_assumption(estimate, "Cross-region DR", "price_source")),
+        ("cross_region_dr_pricing_status", _component_assumption(estimate, "Cross-region DR", "pricing_status")),
         ("sql_dbu_rate_source", _component_assumption(estimate, "Databricks SQL compute", "dbu_rate_source")),
         ("job_dbu_rate_source", _component_assumption(estimate, "Job/ingestion compute", "dbu_rate_source")),
         ("ai_bi_dbu_rate_source", _component_assumption(estimate, "AI/BI optional layer", "dbu_rate_source")),
@@ -274,10 +282,6 @@ def _warning_summary(estimate: Any) -> str:
 
 def _money(value: float, currency: str) -> str:
     return f"{currency} {value:,.2f}"
-
-
-def _masked_if_needed(value: str, mask: bool) -> str:
-    return "Masked in report" if mask and value else value
 
 
 def _clip_text(value: str, max_length: int) -> str:

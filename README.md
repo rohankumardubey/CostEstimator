@@ -12,6 +12,7 @@ The app is deterministic in its calculations and uses live public storage pricin
 - Self-service analytics with higher query volume.
 - Optional future AI/BI or Genie-style usage.
 - Manual metadata-based estimation without uploading raw dataset files.
+- Optional cross-region DR estimates for replicated storage, changed-data transfer, and cross-region reads.
 
 ## Architecture
 
@@ -102,6 +103,7 @@ AWS includes a broad set of commercial regions in the dropdown. Config-mode fall
 The config includes:
 
 - Currency and default buffer percentage.
+- Cross-region DR fallback transfer prices by cloud/provider route.
 - Cloud providers, regions, and storage classes.
 - Storage price per GB-month.
 - Optional object monitoring costs per 1,000 objects.
@@ -123,11 +125,31 @@ effective_gb = data_size_gb * (1 + annual_growth_percentage / 100 / 2)
 monthly_storage_cost =
   effective_gb
   * storage_price_per_gb_month
-  * replication_factor
+  * storage_copy_multiplier
   * environment_multiplier
   + object_monitoring_cost
   + request_cost
 ```
+
+The UI exposes this as a redundancy model plus the numeric storage copy multiplier:
+
+- Single copy: `1x`
+- Backup copy: `2x`
+- Custom multiplier: user-entered multiplier from platform or FinOps.
+
+Cross-region DR is optional and disabled by default. When enabled, storage is costed at a minimum of `2x` copies if the DR storage copy option is enabled, and transfer/access cost is added separately:
+
+```text
+one_time_replication_cost =
+  initial_replication_gb * transfer_price_per_gb
+
+monthly_cross_region_dr_cost =
+  (monthly_changed_data_gb + monthly_cross_region_read_gb)
+  * transfer_price_per_gb
+  + optional_initial_replication_amortization
+```
+
+AWS route-level transfer pricing is attempted from the public AWS Price List API when live pricing is enabled. If the route cannot be matched cleanly, configured fallback values are used and shown in the assumptions panel.
 
 SQL compute:
 
@@ -183,7 +205,8 @@ The app is designed for manual entry of aggregate dataset metadata:
 - Archive, structured, and document file counts.
 - Annual growth percentage.
 - Environment count.
-- Replication or backup factor.
+- Redundancy model and storage copy multiplier.
+- Optional cross-region DR destination, initial replication GB, monthly changed-data GB, and monthly cross-region read GB.
 
 Do not enter raw file contents, source document text, or sensitive business data.
 
@@ -199,7 +222,6 @@ This is local-only. The app does not store saved estimates on the backend, and n
 
 - Do not upload actual source documents, raw dataset files, or sensitive business content.
 - Enter aggregate metadata only.
-- The UI includes a masking option for names in generated reports.
 
 ## API endpoints
 

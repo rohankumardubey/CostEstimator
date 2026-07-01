@@ -6,6 +6,7 @@ from typing import Any
 from .models import (
     AIBIInput,
     CostComponent,
+    CrossRegionTransferInput,
     DatasetInput,
     EstimateRequest,
     EstimateResponse,
@@ -18,6 +19,7 @@ from .models import (
 from .pricing import (
     get_ai_bi_dbu_rate,
     get_cloud_storage_config,
+    get_cross_region_transfer_config,
     get_job_dbu_per_hour,
     get_job_dbu_rate,
     get_sql_dbu_per_hour,
@@ -37,6 +39,7 @@ def calculate_storage_cost(
     dataset: DatasetInput,
     storage: StorageInput,
     pricing: dict[str, Any],
+    minimum_replication_factor: float | None = None,
 ) -> CostComponent:
     storage_config = get_cloud_storage_config(
         pricing,
@@ -46,7 +49,8 @@ def calculate_storage_cost(
     )
     effective_gb = _effective_gb_with_growth(dataset)
     environment_multiplier = dataset.number_of_environments
-    replication_factor = dataset.replication_factor
+    configured_replication_factor = dataset.replication_factor
+    replication_factor = max(configured_replication_factor, minimum_replication_factor or 0)
 
     gb_month_cost = (
         effective_gb
@@ -84,6 +88,9 @@ def calculate_storage_cost(
             "price_per_gb_month": storage_config.get("price_per_gb_month", 0),
             "effective_gb_with_growth": round(effective_gb, 4),
             "annual_growth_percentage": dataset.annual_growth_percentage,
+            "redundancy_model": dataset.redundancy_model.value,
+            "configured_replication_factor": configured_replication_factor,
+            "minimum_replication_factor": minimum_replication_factor or 0,
             "replication_factor": replication_factor,
             "environment_multiplier": environment_multiplier,
             "monitoring_per_1000_objects": storage_config.get("monitoring_per_1000_objects", 0),
@@ -94,6 +101,67 @@ def calculate_storage_cost(
             "pricing_source": storage_config.get("pricing_source", "config_fallback"),
             "pricing_status": storage_config.get("pricing_status", "fallback"),
             "pricing_note": storage_config.get("pricing_note", ""),
+        },
+    )
+
+
+def calculate_cross_region_transfer_cost(
+    dataset: DatasetInput,
+    transfer: CrossRegionTransferInput,
+    pricing: dict[str, Any],
+) -> CostComponent:
+    destination_region = transfer.destination_region
+    transfer_config = (
+        get_cross_region_transfer_config(
+            pricing,
+            dataset.cloud_provider.value,
+            dataset.region,
+            destination_region,
+        )
+        if destination_region
+        else {}
+    )
+    price_per_gb = float(
+        transfer.transfer_price_per_gb_override
+        if transfer.transfer_price_per_gb_override is not None
+        else transfer_config.get("price_per_gb", 0)
+    )
+    monthly_transfer_gb = transfer.monthly_changed_data_gb + transfer.monthly_cross_region_read_gb
+    recurring_monthly_cost = monthly_transfer_gb * price_per_gb if transfer.enabled else 0
+    one_time_initial_replication_cost = transfer.initial_replication_gb * price_per_gb if transfer.enabled else 0
+    amortized_initial_monthly_cost = (
+        one_time_initial_replication_cost / transfer.amortize_initial_months
+        if transfer.enabled and transfer.amortize_initial_months > 0
+        else 0
+    )
+    monthly_cost = recurring_monthly_cost + amortized_initial_monthly_cost
+
+    return CostComponent(
+        label="Cross-region DR",
+        monthly_cost=_round_money(monthly_cost),
+        assumptions={
+            "enabled": transfer.enabled,
+            "source_region": dataset.region,
+            "destination_region": destination_region,
+            "include_dr_storage_copy": transfer.include_dr_storage_copy,
+            "price_per_gb": price_per_gb,
+            "price_source": "user_input"
+            if transfer.transfer_price_per_gb_override is not None
+            else transfer_config.get("pricing_source", "config_fallback"),
+            "pricing_status": "manual"
+            if transfer.transfer_price_per_gb_override is not None
+            else transfer_config.get("pricing_status", "fallback"),
+            "pricing_note": "User-entered transfer price override."
+            if transfer.transfer_price_per_gb_override is not None
+            else transfer_config.get("pricing_note", ""),
+            "initial_replication_gb": transfer.initial_replication_gb if transfer.enabled else 0,
+            "monthly_changed_data_gb": transfer.monthly_changed_data_gb if transfer.enabled else 0,
+            "monthly_cross_region_read_gb": transfer.monthly_cross_region_read_gb if transfer.enabled else 0,
+            "monthly_transfer_gb": monthly_transfer_gb if transfer.enabled else 0,
+            "recurring_monthly_transfer_cost": _round_money(recurring_monthly_cost),
+            "one_time_initial_replication_cost": _round_money(one_time_initial_replication_cost),
+            "amortized_initial_monthly_cost": _round_money(amortized_initial_monthly_cost),
+            "amortize_initial_months": transfer.amortize_initial_months,
         },
     )
 
@@ -212,12 +280,28 @@ def calculate_total_estimate(
     request: EstimateRequest,
     pricing: dict[str, Any],
 ) -> EstimateResponse:
-    storage = calculate_storage_cost(request.dataset, request.storage, pricing)
+    minimum_replication_factor = (
+        2
+        if request.cross_region_transfer.enabled
+        and request.cross_region_transfer.include_dr_storage_copy
+        else None
+    )
+    storage = calculate_storage_cost(
+        request.dataset,
+        request.storage,
+        pricing,
+        minimum_replication_factor=minimum_replication_factor,
+    )
     sql = calculate_sql_compute_cost(request.sql_compute, pricing)
     jobs = calculate_job_compute_cost(request.job_compute, pricing)
     ai_bi = calculate_ai_bi_cost(request.ai_bi, pricing)
+    cross_region_dr = calculate_cross_region_transfer_cost(
+        request.dataset,
+        request.cross_region_transfer,
+        pricing,
+    )
 
-    components = [storage, sql, jobs, ai_bi]
+    components = [storage, sql, jobs, ai_bi, cross_region_dr]
     total_monthly = sum(component.monthly_cost for component in components)
     buffer_percentage = float(
         request.buffer_percentage
@@ -235,7 +319,10 @@ def calculate_total_estimate(
         "buffer_percentage": buffer_percentage,
         "currency": pricing.get("currency", "USD"),
         "environment_multiplier": request.dataset.number_of_environments,
-        "replication_factor": request.dataset.replication_factor,
+        "redundancy_model": request.dataset.redundancy_model.value,
+        "configured_replication_factor": request.dataset.replication_factor,
+        "replication_factor": storage.assumptions["replication_factor"],
+        "cross_region_dr_enabled": request.cross_region_transfer.enabled,
         "dataset_size_gb": request.dataset.total_data_size_gb,
         "file_count": request.dataset.file_count,
         "scenario_description": scenario.get("description", ""),
@@ -252,6 +339,10 @@ def calculate_total_estimate(
         monthly_sql_compute_cost=sql.monthly_cost,
         monthly_job_compute_cost=jobs.monthly_cost,
         monthly_ai_bi_cost=ai_bi.monthly_cost,
+        monthly_cross_region_transfer_cost=cross_region_dr.monthly_cost,
+        one_time_cross_region_transfer_cost=float(
+            cross_region_dr.assumptions.get("one_time_initial_replication_cost", 0)
+        ),
         total_monthly_estimate=_round_money(total_monthly),
         total_annual_estimate=_round_money(total_annual),
         estimate_with_buffer_monthly=_round_money(estimate_with_buffer_monthly),
@@ -324,6 +415,7 @@ def build_estimate_warnings(request: EstimateRequest) -> list[EstimateWarning]:
     sql_compute = request.sql_compute
     job_compute = request.job_compute
     ai_bi = request.ai_bi
+    cross_region_transfer = request.cross_region_transfer
 
     if dataset.total_data_size_gb <= 0:
         warnings.append(
@@ -372,7 +464,44 @@ def build_estimate_warnings(request: EstimateRequest) -> list[EstimateWarning]:
             EstimateWarning(
                 severity="low",
                 field="replication_factor",
-                message="No extra backup or replication factor is included.",
+                message="Single-copy storage is selected. Confirm backup, redundancy, and DR expectations with platform owners.",
+            )
+        )
+    if cross_region_transfer.enabled:
+        if not cross_region_transfer.destination_region:
+            warnings.append(
+                EstimateWarning(
+                    severity="medium",
+                    field="destination_region",
+                    message="Cross-region DR is enabled but no destination region is selected.",
+                )
+            )
+        if cross_region_transfer.destination_region == dataset.region:
+            warnings.append(
+                EstimateWarning(
+                    severity="medium",
+                    field="destination_region",
+                    message="Cross-region DR destination matches the source region.",
+                )
+            )
+        if (
+            cross_region_transfer.monthly_changed_data_gb == 0
+            and cross_region_transfer.monthly_cross_region_read_gb == 0
+            and cross_region_transfer.initial_replication_gb == 0
+        ):
+            warnings.append(
+                EstimateWarning(
+                    severity="low",
+                    field="cross_region_transfer",
+                    message="Cross-region DR is enabled but replication and transfer volumes are zero.",
+                )
+            )
+    if dataset.redundancy_model == "custom" and dataset.replication_factor <= 1:
+        warnings.append(
+            EstimateWarning(
+                severity="medium",
+                field="redundancy_model",
+                message="Custom redundancy is selected but the storage copy multiplier is not above 1.",
             )
         )
     if dataset.annual_growth_percentage == 0:

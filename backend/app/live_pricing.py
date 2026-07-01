@@ -42,6 +42,7 @@ _CACHE_EXPIRES_AT = 0.0
 def load_live_pricing_config(
     base_config: dict[str, Any],
     selected_region: tuple[str, str] | None = None,
+    selected_transfer_route: tuple[str, str, str | None] | None = None,
 ) -> dict[str, Any]:
     global _CACHE, _CACHE_EXPIRES_AT
 
@@ -61,8 +62,22 @@ def load_live_pricing_config(
 
     config = copy.deepcopy(_CACHE)
 
-    if mode == "live" and selected_region and not _selected_region_has_live_storage(config, *selected_region):
-        config = _build_live_config(base_config, ttl_seconds, selected_region, config)
+    needs_storage = (
+        bool(selected_region)
+        and not _selected_region_has_live_storage(config, *selected_region)
+    )
+    needs_transfer = (
+        bool(selected_transfer_route)
+        and not _selected_route_has_live_transfer(config, *selected_transfer_route)
+    )
+    if mode == "live" and (needs_storage or needs_transfer):
+        config = _build_live_config(
+            base_config,
+            ttl_seconds,
+            selected_region,
+            selected_transfer_route,
+            config,
+        )
 
     _CACHE = copy.deepcopy(config)
     _CACHE_EXPIRES_AT = now + ttl_seconds
@@ -72,15 +87,23 @@ def load_live_pricing_config(
 def _build_live_config(
     base_config: dict[str, Any],
     ttl_seconds: int,
-    selected_region: tuple[str, str],
+    selected_region: tuple[str, str] | None,
+    selected_transfer_route: tuple[str, str, str | None] | None,
     current_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     config = copy.deepcopy(current_config or base_config)
     _mark_all_storage_as_config_fallback(config)
     notes: list[str] = []
     timeout = float(os.getenv("LIVE_PRICING_TIMEOUT_SECONDS", "8"))
-    cloud_provider, region_key = selected_region
-    _apply_selected_storage_prices(config, timeout, notes, cloud_provider, region_key)
+    if selected_region:
+        cloud_provider, region_key = selected_region
+        _apply_selected_storage_prices(config, timeout, notes, cloud_provider, region_key)
+    if selected_transfer_route:
+        cloud_provider, source_region, destination_region = selected_transfer_route
+        if cloud_provider == "aws" and destination_region:
+            _apply_aws_transfer_price(config, timeout, notes, source_region, destination_region)
+        elif destination_region:
+            notes.append(f"Live transfer pricing is not enabled for cloud provider '{cloud_provider}'; using configured fallback.")
     config["pricing_source"] = {
         "mode": "live",
         "updated_at": datetime.now(UTC).isoformat(),
@@ -131,6 +154,25 @@ def _selected_region_has_live_storage(config: dict[str, Any], cloud_provider: st
     return any(storage.get("pricing_status") == "live" for storage in region.get("storage", {}).values())
 
 
+def _selected_route_has_live_transfer(
+    config: dict[str, Any],
+    cloud_provider: str,
+    source_region: str,
+    destination_region: str | None,
+) -> bool:
+    if not destination_region:
+        return True
+    route = (
+        config.get("network", {})
+        .get("cross_region_transfer", {})
+        .get(cloud_provider, {})
+        .get("routes", {})
+        .get(source_region, {})
+        .get(destination_region, {})
+    )
+    return route.get("pricing_status") == "live"
+
+
 def _apply_selected_storage_prices(
     config: dict[str, Any],
     timeout: float,
@@ -148,7 +190,12 @@ def _apply_selected_storage_prices(
         notes.append(f"Live pricing is not supported for cloud provider '{cloud_provider}'.")
 
 
-def _apply_aws_storage_prices(config: dict[str, Any], timeout: float, notes: list[str], region_key: str) -> None:
+def _apply_aws_storage_prices(
+    config: dict[str, Any],
+    timeout: float,
+    notes: list[str],
+    region_key: str,
+) -> None:
     aws_regions = config.get("cloud", {}).get("aws", {}).get("regions", {})
     region = aws_regions.get(region_key)
     if not region:
@@ -174,6 +221,64 @@ def _apply_aws_storage_prices(config: dict[str, Any], timeout: float, notes: lis
         storage["pricing_status"] = "live"
         storage["pricing_source_url"] = AWS_S3_PRICE_URL.format(region=region_key)
         storage["pricing_note"] = "AWS public Price List API for the selected estimate region."
+
+
+def _apply_aws_transfer_price(
+    config: dict[str, Any],
+    timeout: float,
+    notes: list[str],
+    source_region: str,
+    destination_region: str,
+) -> None:
+    try:
+        offer = _fetch_aws_json(AWS_S3_PRICE_URL.format(region=source_region), timeout)
+    except Exception as exc:
+        notes.append(f"AWS S3 transfer live pricing failed for {source_region} -> {destination_region}: {exc}")
+        return
+
+    price = _extract_aws_s3_inter_region_transfer_price(offer, destination_region)
+    if price is None:
+        notes.append(f"AWS S3 transfer live price not found for {source_region} -> {destination_region}; using configured fallback.")
+        return
+
+    routes = (
+        config.setdefault("network", {})
+        .setdefault("cross_region_transfer", {})
+        .setdefault("aws", {})
+        .setdefault("routes", {})
+    )
+    route = routes.setdefault(source_region, {}).setdefault(destination_region, {})
+    route["price_per_gb"] = price
+    route["pricing_source"] = "aws_price_list_api"
+    route["pricing_status"] = "live"
+    route["pricing_note"] = "AWS public Price List API route-level inter-region transfer for the selected estimate route."
+
+
+def _extract_aws_s3_inter_region_transfer_price(offer: dict[str, Any], destination_region: str) -> float | None:
+    destination_tokens = {
+        destination_region.lower(),
+        destination_region.replace("-", "").lower(),
+    }
+    for sku, product in offer.get("products", {}).items():
+        attributes = product.get("attributes", {})
+        combined = " ".join(str(value).lower() for value in attributes.values())
+        usage_type = attributes.get("usagetype", "").lower()
+        transfer_type = attributes.get("transferType", "").lower()
+
+        looks_like_inter_region = (
+            "interregion" in combined
+            or "inter-region" in combined
+            or "regional" in usage_type
+            or "data transfer" in transfer_type
+        )
+        looks_like_outbound = "out" in combined or "outbound" in combined
+        mentions_destination = any(token in combined for token in destination_tokens)
+        if not (looks_like_inter_region and looks_like_outbound and mentions_destination):
+            continue
+        price = _first_price_dimension(offer, sku, "GB")
+        if price is not None:
+            return price
+    return None
 
 
 def _extract_aws_s3_storage_price(offer: dict[str, Any], aws_class: str) -> float | None:

@@ -36,11 +36,15 @@ def load_effective_pricing_config(config_path: str | None = None) -> dict[str, A
 def load_effective_pricing_config_for_region(
     cloud_provider: str,
     region: str,
+    destination_region: str | None = None,
     config_path: str | None = None,
 ) -> dict[str, Any]:
     return load_live_pricing_config(
         load_pricing_config(config_path),
         selected_region=(cloud_provider, region),
+        selected_transfer_route=(cloud_provider, region, destination_region)
+        if destination_region
+        else None,
     )
 
 
@@ -65,6 +69,40 @@ def get_cloud_storage_config(
                 f"{cloud_provider}/{region}/{storage_class}."
             ),
         ) from exc
+
+
+def get_cross_region_transfer_config(
+    pricing: dict[str, Any],
+    cloud_provider: str,
+    source_region: str,
+    destination_region: str,
+) -> dict[str, Any]:
+    transfer_config = pricing.get("network", {}).get("cross_region_transfer", {})
+    provider_config = transfer_config.get(cloud_provider, {})
+    route_config = (
+        provider_config.get("routes", {})
+        .get(source_region, {})
+        .get(destination_region, {})
+    )
+    default_price = provider_config.get(
+        "default_price_per_gb",
+        transfer_config.get("default_price_per_gb", 0),
+    )
+    return {
+        "price_per_gb": route_config.get("price_per_gb", default_price),
+        "pricing_source": route_config.get(
+            "pricing_source",
+            provider_config.get("pricing_source", transfer_config.get("pricing_source", "config_fallback")),
+        ),
+        "pricing_status": route_config.get(
+            "pricing_status",
+            provider_config.get("pricing_status", transfer_config.get("pricing_status", "fallback")),
+        ),
+        "pricing_note": route_config.get(
+            "pricing_note",
+            provider_config.get("pricing_note", transfer_config.get("pricing_note", "")),
+        ),
+    }
 
 
 def get_sql_dbu_per_hour(pricing: dict[str, Any], warehouse_size: str, custom: float | None) -> float:

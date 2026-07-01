@@ -55,6 +55,9 @@ def estimate(request: EstimateRequest):
     pricing = load_effective_pricing_config_for_region(
         request.dataset.cloud_provider.value,
         request.dataset.region,
+        request.cross_region_transfer.destination_region
+        if request.cross_region_transfer.enabled
+        else None,
     )
     return build_scenario_estimate(request, pricing)
 
@@ -64,6 +67,9 @@ def scenario_comparison(request: EstimateRequest):
     pricing = load_effective_pricing_config_for_region(
         request.dataset.cloud_provider.value,
         request.dataset.region,
+        request.cross_region_transfer.destination_region
+        if request.cross_region_transfer.enabled
+        else None,
     )
     return build_scenario_comparison(request, pricing)
 

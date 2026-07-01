@@ -2,6 +2,7 @@ export type CloudProvider = "aws" | "azure" | "gcp";
 export type WarehouseType = "serverless" | "pro" | "classic";
 export type UsagePattern = "rare" | "occasional" | "frequent" | "high";
 export type IngestionFrequency = "one-time" | "daily" | "weekly" | "monthly";
+export type RedundancyModel = "single_copy" | "backup_copy" | "custom";
 
 export interface DatasetInput {
   team_name: string;
@@ -15,8 +16,8 @@ export interface DatasetInput {
   document_file_count: number;
   annual_growth_percentage: number;
   number_of_environments: number;
+  redundancy_model: RedundancyModel;
   replication_factor: number;
-  mask_names_in_report: boolean;
 }
 
 export interface StorageInput {
@@ -57,6 +58,17 @@ export interface AIBIInput {
   dbu_rate?: number | null;
 }
 
+export interface CrossRegionTransferInput {
+  enabled: boolean;
+  destination_region: string;
+  include_dr_storage_copy: boolean;
+  initial_replication_gb: number;
+  monthly_changed_data_gb: number;
+  monthly_cross_region_read_gb: number;
+  amortize_initial_months: number;
+  transfer_price_per_gb_override?: number | null;
+}
+
 export interface EstimateRequest {
   scenario_key: string;
   dataset: DatasetInput;
@@ -64,6 +76,7 @@ export interface EstimateRequest {
   sql_compute: SQLComputeInput;
   job_compute: JobComputeInput;
   ai_bi: AIBIInput;
+  cross_region_transfer: CrossRegionTransferInput;
   buffer_percentage?: number | null;
 }
 
@@ -88,6 +101,8 @@ export interface EstimateResponse {
   monthly_sql_compute_cost: number;
   monthly_job_compute_cost: number;
   monthly_ai_bi_cost: number;
+  monthly_cross_region_transfer_cost: number;
+  one_time_cross_region_transfer_cost: number;
   total_monthly_estimate: number;
   total_annual_estimate: number;
   estimate_with_buffer_monthly: number;

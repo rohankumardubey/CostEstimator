@@ -1,6 +1,31 @@
 currency: USD
 default_buffer_percentage: 15
 
+network:
+  cross_region_transfer:
+    default_price_per_gb: 0.02
+    pricing_source: config_fallback
+    pricing_status: fallback
+    pricing_note: Configured fallback for cross-region transfer. Validate with cloud networking and FinOps before sign-off.
+    aws:
+      default_price_per_gb: 0.02
+      pricing_source: config_fallback
+      pricing_status: fallback
+      pricing_note: AWS fallback value; live route-level pricing is used when available for the selected route.
+      routes: {}
+    azure:
+      default_price_per_gb: 0.02
+      pricing_source: config_fallback
+      pricing_status: fallback
+      pricing_note: Azure fallback value; validate region-pair transfer pricing with FinOps.
+      routes: {}
+    gcp:
+      default_price_per_gb: 0.02
+      pricing_source: config_fallback
+      pricing_status: fallback
+      pricing_note: GCP fallback value; validate inter-region transfer pricing with FinOps.
+      routes: {}
+
 cloud:
   aws:
     display_name: AWS
@@ -511,6 +536,7 @@ sample_dataset:
   document_file_count: 2714
   annual_growth_percentage: 10
   number_of_environments: 1
+  redundancy_model: single_copy
   replication_factor: 1
   dominant_category: Archive/document-heavy
   suggested_scenarios:

@@ -35,11 +35,13 @@ import { exportBlob, getPricingConfig, getScenarios, postEstimate, postScenarioC
 import type {
   AIBIInput,
   CloudProvider,
+  CrossRegionTransferInput,
   DatasetInput,
   EstimateRequest,
   EstimateResponse,
   JobComputeInput,
   PricingConfig,
+  RedundancyModel,
   SQLComputeInput,
   ScenarioConfig,
   StorageInput
@@ -49,6 +51,26 @@ const COLORS = ["#2563eb", "#059669", "#dc6803", "#7c3aed", "#475467"];
 const AUTH_SESSION_KEY = "databricks-cost-estimator-authenticated";
 const LOGIN_USERNAME = import.meta.env.VITE_APP_USERNAME ?? "admin";
 const LOGIN_PASSWORD = import.meta.env.VITE_APP_PASSWORD ?? "databricks";
+const REDUNDANCY_OPTIONS: Array<{ value: RedundancyModel; label: string; multiplier: number; description: string }> = [
+  {
+    value: "single_copy",
+    label: "Single copy",
+    multiplier: 1,
+    description: "One storage copy only. Use for early estimates when backup or disaster recovery is not in scope."
+  },
+  {
+    value: "backup_copy",
+    label: "Backup copy",
+    multiplier: 2,
+    description: "Primary storage plus one backup or retained copy."
+  },
+  {
+    value: "custom",
+    label: "Custom multiplier",
+    multiplier: 1,
+    description: "Use when platform or FinOps gives a specific storage replication multiplier."
+  }
+];
 
 const defaultDataset: DatasetInput = {
   team_name: "Example Data Team",
@@ -62,8 +84,8 @@ const defaultDataset: DatasetInput = {
   document_file_count: 2714,
   annual_growth_percentage: 10,
   number_of_environments: 1,
-  replication_factor: 1,
-  mask_names_in_report: false
+  redundancy_model: "single_copy",
+  replication_factor: 1
 };
 
 const defaultStorage: StorageInput = {
@@ -104,6 +126,17 @@ const defaultAiBi: AIBIInput = {
   dbu_rate: null
 };
 
+const defaultCrossRegionTransfer: CrossRegionTransferInput = {
+  enabled: false,
+  destination_region: "",
+  include_dr_storage_copy: true,
+  initial_replication_gb: 0,
+  monthly_changed_data_gb: 0,
+  monthly_cross_region_read_gb: 0,
+  amortize_initial_months: 0,
+  transfer_price_per_gb_override: null
+};
+
 type LoadedEstimateState = {
   filename: string;
   savedAt?: string;
@@ -138,6 +171,7 @@ function App() {
   const [sqlCompute, setSqlCompute] = useState<SQLComputeInput>(defaultSql);
   const [jobCompute, setJobCompute] = useState<JobComputeInput>(defaultJob);
   const [aiBi, setAiBi] = useState<AIBIInput>(defaultAiBi);
+  const [crossRegionTransfer, setCrossRegionTransfer] = useState<CrossRegionTransferInput>(defaultCrossRegionTransfer);
   const [bufferPercentage, setBufferPercentage] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState<"estimator" | "knowledge">("knowledge");
   const [activeSection, setActiveSection] = useState<EstimatorSection>("scenario");
@@ -160,8 +194,7 @@ function App() {
         setBufferPercentage(pricingConfig.default_buffer_percentage);
         setDataset((current) => ({
           ...current,
-          ...pricingConfig.sample_dataset,
-          mask_names_in_report: false
+          ...pricingConfig.sample_dataset
         }));
       })
       .catch((err: Error) => setError(err.message));
@@ -246,9 +279,10 @@ function App() {
       sql_compute: sqlCompute,
       job_compute: jobCompute,
       ai_bi: aiBi,
+      cross_region_transfer: crossRegionTransfer,
       buffer_percentage: bufferPercentage
     }),
-    [selectedScenario, dataset, storage, sqlCompute, jobCompute, aiBi, bufferPercentage]
+    [selectedScenario, dataset, storage, sqlCompute, jobCompute, aiBi, crossRegionTransfer, bufferPercentage]
   );
 
   useEffect(() => {
@@ -272,6 +306,9 @@ function App() {
   const cloudConfig = pricing?.cloud[dataset.cloud_provider];
   const regionConfig = cloudConfig?.regions[dataset.region];
   const storageOptions = regionConfig?.storage ?? {};
+  const destinationRegionOptions = Object.entries(cloudConfig?.regions ?? {})
+    .filter(([key]) => key !== dataset.region)
+    .map(([key, region]) => ({ value: key, label: region.display_name }));
 
   function applyScenario(key: string) {
     const scenario = scenarios[key];
@@ -295,10 +332,24 @@ function App() {
     }
     const defaultRegion = pricing.cloud[nextCloud].default_region;
     const scenario = scenarios[selectedScenario];
+    const destinationRegion = getDefaultDestinationRegion(defaultRegion, Object.keys(pricing.cloud[nextCloud].regions));
     setDataset((current) => ({ ...current, cloud_provider: nextCloud, region: defaultRegion }));
+    setCrossRegionTransfer((current) => ({
+      ...current,
+      destination_region: current.enabled ? destinationRegion : ""
+    }));
     setStorage((current) => ({
       ...current,
       storage_class: scenario?.storage_class_by_cloud[nextCloud] ?? Object.keys(pricing.cloud[nextCloud].regions[defaultRegion].storage)[0]
+    }));
+  }
+
+  function updateRedundancyModel(nextModel: RedundancyModel) {
+    const option = getRedundancyOption(nextModel);
+    setDataset((current) => ({
+      ...current,
+      redundancy_model: nextModel,
+      replication_factor: nextModel === "custom" ? current.replication_factor : option.multiplier
     }));
   }
 
@@ -370,6 +421,7 @@ function App() {
     setSqlCompute(nextRequest.sql_compute);
     setJobCompute(nextRequest.job_compute);
     setAiBi(nextRequest.ai_bi);
+    setCrossRegionTransfer(nextRequest.cross_region_transfer ?? defaultCrossRegionTransfer);
     setBufferPercentage(nextRequest.buffer_percentage ?? pricing?.default_buffer_percentage ?? null);
   }
 
@@ -382,8 +434,7 @@ function App() {
       ...defaultDataset,
       ...pricing?.sample_dataset,
       cloud_provider: defaultCloud,
-      region: defaultRegion,
-      mask_names_in_report: false
+      region: defaultRegion
     });
     setStorage({
       ...defaultStorage,
@@ -395,6 +446,7 @@ function App() {
     setSqlCompute(defaultSql);
     setJobCompute(defaultJob);
     setAiBi(defaultAiBi);
+    setCrossRegionTransfer(defaultCrossRegionTransfer);
     setBufferPercentage(pricing?.default_buffer_percentage ?? null);
     setLoadedEstimate({ filename: "Sample defaults", action: "reset" });
     setError(null);
@@ -642,6 +694,7 @@ function App() {
             <KpiCard label="SQL compute" value={money(estimate?.monthly_sql_compute_cost, estimate?.currency)} />
             <KpiCard label="Job compute" value={money(estimate?.monthly_job_compute_cost, estimate?.currency)} />
             <KpiCard label="AI/BI optional" value={money(estimate?.monthly_ai_bi_cost, estimate?.currency)} />
+            <KpiCard label="Cross-region DR" value={money(estimate?.monthly_cross_region_transfer_cost, estimate?.currency)} />
             <KpiCard label="Monthly estimate" value={money(estimate?.total_monthly_estimate, estimate?.currency)} strong />
             <KpiCard label="Annual estimate" value={money(estimate?.total_annual_estimate, estimate?.currency)} />
             <KpiCard label="With buffer" value={money(estimate?.estimate_with_buffer_annual, estimate?.currency)} />
@@ -753,7 +806,15 @@ function App() {
               <SelectField
                 label="Region"
                 value={dataset.region}
-                onChange={(value) => setDataset({ ...dataset, region: value })}
+                onChange={(value) => {
+                  setDataset({ ...dataset, region: value });
+                  if (crossRegionTransfer.destination_region === value) {
+                    setCrossRegionTransfer({
+                      ...crossRegionTransfer,
+                      destination_region: getDefaultDestinationRegion(value, Object.keys(cloudConfig?.regions ?? {}))
+                    });
+                  }
+                }}
                 options={Object.entries(cloudConfig?.regions ?? {}).map(([key, region]) => ({ value: key, label: region.display_name }))}
               />
               <NumberField label="Total data size GB" value={dataset.total_data_size_gb} onChange={(value) => setDataset({ ...dataset, total_data_size_gb: value })} />
@@ -783,20 +844,28 @@ function App() {
                 value={dataset.number_of_environments}
                 onChange={(value) => setDataset({ ...dataset, number_of_environments: value })}
               />
+              <SelectField
+                label="Redundancy model"
+                value={dataset.redundancy_model}
+                onChange={(value) => updateRedundancyModel(value as RedundancyModel)}
+                options={REDUNDANCY_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+              />
               <NumberField
-                label="Replication/backup factor"
+                label="Storage copy multiplier"
                 value={dataset.replication_factor}
-                onChange={(value) => setDataset({ ...dataset, replication_factor: value })}
+                onChange={(value) => setDataset({ ...dataset, redundancy_model: "custom", replication_factor: value })}
               />
             </div>
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={dataset.mask_names_in_report}
-                onChange={(event) => setDataset({ ...dataset, mask_names_in_report: event.target.checked })}
-              />
-              <span>Mask file and folder names in generated report views</span>
-            </label>
+            <div className="enterprise-note-card">
+              <BadgeCheck size={18} />
+              <div>
+                <strong>{getRedundancyOption(dataset.redundancy_model).label}</strong>
+                <span>{getRedundancyOption(dataset.redundancy_model).description}</span>
+                <small>
+                  Applied storage copy multiplier: {dataset.replication_factor}x
+                </small>
+              </div>
+            </div>
             <p className="empty-note">Sample defaults are loaded as a starting point. Replace them with the dataset metadata you want to estimate.</p>
           </section>
 
@@ -820,6 +889,80 @@ function App() {
                 onChange={(value) => setStorage({ ...storage, monthly_write_requests: value })}
               />
               <NumberField label="Buffer %" value={bufferPercentage ?? 0} onChange={(value) => setBufferPercentage(value)} />
+            </div>
+            <div className="cross-region-section">
+              <PanelHeading title="Cross-region DR" subtitle="Optional replication, transfer, and access charges" />
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={crossRegionTransfer.enabled}
+                  onChange={(event) => {
+                    const enabled = event.target.checked;
+                    setCrossRegionTransfer({
+                      ...crossRegionTransfer,
+                      enabled,
+                      include_dr_storage_copy: true,
+                      destination_region: enabled
+                        ? crossRegionTransfer.destination_region || getDefaultDestinationRegion(dataset.region, Object.keys(cloudConfig?.regions ?? {}))
+                        : crossRegionTransfer.destination_region
+                    });
+                  }}
+                />
+                <span>Estimate cross-region DR transfer/access cost</span>
+              </label>
+              <div className="field-grid compact">
+                <SelectField
+                  label="Destination region"
+                  value={crossRegionTransfer.destination_region}
+                  onChange={(value) => setCrossRegionTransfer({ ...crossRegionTransfer, destination_region: value })}
+                  options={[{ value: "", label: "Select destination" }, ...destinationRegionOptions]}
+                  disabled={!crossRegionTransfer.enabled}
+                />
+                <NumberField
+                  label="Initial replication GB"
+                  value={crossRegionTransfer.initial_replication_gb}
+                  onChange={(value) => setCrossRegionTransfer({ ...crossRegionTransfer, initial_replication_gb: value })}
+                  disabled={!crossRegionTransfer.enabled}
+                />
+                <NumberField
+                  label="Monthly changed data GB"
+                  value={crossRegionTransfer.monthly_changed_data_gb}
+                  onChange={(value) => setCrossRegionTransfer({ ...crossRegionTransfer, monthly_changed_data_gb: value })}
+                  disabled={!crossRegionTransfer.enabled}
+                />
+                <NumberField
+                  label="Monthly cross-region read GB"
+                  value={crossRegionTransfer.monthly_cross_region_read_gb}
+                  onChange={(value) => setCrossRegionTransfer({ ...crossRegionTransfer, monthly_cross_region_read_gb: value })}
+                  disabled={!crossRegionTransfer.enabled}
+                />
+                <NumberField
+                  label="Amortize initial over months"
+                  value={crossRegionTransfer.amortize_initial_months}
+                  onChange={(value) => setCrossRegionTransfer({ ...crossRegionTransfer, amortize_initial_months: value })}
+                  disabled={!crossRegionTransfer.enabled}
+                />
+                <NumberField
+                  label="Transfer price/GB override"
+                  value={crossRegionTransfer.transfer_price_per_gb_override ?? 0}
+                  onChange={(value) => setCrossRegionTransfer({ ...crossRegionTransfer, transfer_price_per_gb_override: value > 0 ? value : null })}
+                  disabled={!crossRegionTransfer.enabled}
+                />
+              </div>
+              <div className="enterprise-note-card compact">
+                <Cloud size={18} />
+                <div>
+                  <strong>{crossRegionTransfer.enabled ? "Cross-region DR enabled" : "Cross-region DR disabled"}</strong>
+                  <span>
+                    {crossRegionTransfer.enabled
+                      ? "Storage is costed with a minimum 2x DR copy and transfer/access volume is added as a separate cost line."
+                      : "Leave disabled when DR, replicated copies, and cross-region reads are not in scope."}
+                  </span>
+                  <small>
+                    Current route: {dataset.region} to {crossRegionTransfer.destination_region || "destination not selected"}
+                  </small>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -1110,7 +1253,8 @@ function KnowledgeBasePage({ onBack }: { onBack: () => void }) {
               ["File counts", "Used for object monitoring, per-file metrics, and archive/document split."],
               ["Annual growth %", "Models average storage growth over the year."],
               ["Environments", "Multiplier for dev, test, prod, or other deployed copies."],
-              ["Replication factor", "Backup or replication multiplier applied to storage."]
+              ["Redundancy model", "Business-friendly choice for single-copy, backup-copy, or custom storage assumptions."],
+              ["Storage copy multiplier", "Numeric backup or replication multiplier applied to storage."]
             ]}
           />
           <KnowledgeCard
@@ -1118,7 +1262,8 @@ function KnowledgeBasePage({ onBack }: { onBack: () => void }) {
             rows={[
               ["Storage class", "Cloud object storage tier such as S3 Standard, ADLS Hot, or GCP Nearline. AWS and Azure storage prices are fetched live where available."],
               ["Read/write requests", "Optional request volume for request-based storage charges."],
-              ["Buffer %", "Contingency added to the total estimate for uncertainty."]
+              ["Buffer %", "Contingency added to the total estimate for uncertainty."],
+              ["Cross-region DR", "Optional destination-region copy plus changed-data transfer and cross-region read assumptions."]
             ]}
           />
           <KnowledgeCard
@@ -1187,6 +1332,12 @@ function KnowledgeBasePage({ onBack }: { onBack: () => void }) {
             note="If the concurrency multiplier is enabled, query hours are multiplied by the configured concurrency factor."
           />
           <FormulaExampleCard
+            title="Cross-region DR"
+            formula="transfer GB x transfer price/GB + optional initial replication amortization"
+            example="(30 changed GB + 20 read GB) x $0.02 + ($6 initial / 12 months) = $1.50/month"
+            note="When enabled, DR storage is also costed at a minimum 2x storage copy multiplier."
+          />
+          <FormulaExampleCard
             title="Job and ingestion compute"
             formula="DBU/hour x DBU rate x job hours x number of jobs"
             example="4 DBU/hour x $0.26 x (30 runs x 20 min / 60) x 2 jobs = $20.80/month"
@@ -1239,6 +1390,7 @@ function ChartPanel({ title, icon, children }: { title: string; icon: ReactNode;
 
 function PricingSourcePanel({ estimate, pricing }: { estimate: EstimateResponse; pricing: PricingConfig | null }) {
   const storage = getComponentAssumptions(estimate, "Storage");
+  const crossRegion = getComponentAssumptions(estimate, "Cross-region DR");
   const sql = getComponentAssumptions(estimate, "Databricks SQL compute");
   const jobs = getComponentAssumptions(estimate, "Job/ingestion compute");
   const aiBi = getComponentAssumptions(estimate, "AI/BI optional layer");
@@ -1284,6 +1436,20 @@ function PricingSourcePanel({ estimate, pricing }: { estimate: EstimateResponse;
             ["Monthly reads", String(storage.monthly_read_requests ?? 0)],
             ["Monthly writes", String(storage.monthly_write_requests ?? 0)]
           ]}
+        />
+        <SourceCard
+          title="Cross-region DR"
+          status={String(crossRegion.pricing_status ?? "fallback") === "manual" ? "manual" : String(crossRegion.pricing_status ?? "fallback") === "live" ? "live" : "fallback"}
+          rows={[
+            ["Enabled", String(crossRegion.enabled ?? false)],
+            ["Route", `${String(crossRegion.source_region ?? "")} -> ${String(crossRegion.destination_region ?? "")}`],
+            ["DR storage copy", String(crossRegion.include_dr_storage_copy ?? true)],
+            ["Transfer price/GB", formatUnitPrice(crossRegion.price_per_gb, estimate.currency)],
+            ["Monthly transfer GB", String(crossRegion.monthly_transfer_gb ?? 0)],
+            ["One-time replication", money(Number(crossRegion.one_time_initial_replication_cost ?? 0), estimate.currency)],
+            ["Source", labelize(String(crossRegion.price_source ?? "config_fallback"))]
+          ]}
+          note={String(crossRegion.pricing_note ?? "")}
         />
         <SourceCard
           title="Databricks SQL"
@@ -1451,17 +1617,19 @@ function SelectField({
   label,
   value,
   onChange,
-  options
+  options,
+  disabled = false
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   options: Array<{ value: string; label: string }>;
+  disabled?: boolean;
 }) {
   return (
     <label className="field">
       <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
+      <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
@@ -1500,6 +1668,14 @@ function titleCase(value: string) {
 
 function labelize(value: string) {
   return titleCase(value);
+}
+
+function getRedundancyOption(value: RedundancyModel) {
+  return REDUNDANCY_OPTIONS.find((option) => option.value === value) ?? REDUNDANCY_OPTIONS[0];
+}
+
+function getDefaultDestinationRegion(sourceRegion: string, regions: string[]) {
+  return regions.find((region) => region !== sourceRegion) ?? "";
 }
 
 function getComponentAssumptions(estimate: EstimateResponse, label: string) {
@@ -1590,6 +1766,10 @@ function normalizeEstimateRequest(payload: unknown): EstimateRequest {
       ...defaultAiBi,
       ...(isRecord(payload.ai_bi) ? payload.ai_bi : {})
     } as AIBIInput,
+    cross_region_transfer: {
+      ...defaultCrossRegionTransfer,
+      ...(isRecord(payload.cross_region_transfer) ? payload.cross_region_transfer : {})
+    } as CrossRegionTransferInput,
     buffer_percentage: typeof payload.buffer_percentage === "number" ? payload.buffer_percentage : null
   };
 }

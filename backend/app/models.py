@@ -32,6 +32,12 @@ class IngestionFrequency(str, Enum):
     monthly = "monthly"
 
 
+class RedundancyModel(str, Enum):
+    single_copy = "single_copy"
+    backup_copy = "backup_copy"
+    custom = "custom"
+
+
 class DatasetInput(BaseModel):
     team_name: str = Field(default="", max_length=120)
     brand_or_dataset_name: str = Field(default="", max_length=160)
@@ -44,8 +50,8 @@ class DatasetInput(BaseModel):
     document_file_count: int = Field(default=0, ge=0)
     annual_growth_percentage: float = Field(default=0, ge=0, le=1000)
     number_of_environments: int = Field(default=1, ge=1, le=20)
+    redundancy_model: RedundancyModel = RedundancyModel.single_copy
     replication_factor: float = Field(default=1, ge=1, le=20)
-    mask_names_in_report: bool = False
 
 
 class StorageInput(BaseModel):
@@ -98,6 +104,17 @@ class AIBIInput(BaseModel):
     dbu_rate: float | None = Field(default=None, ge=0)
 
 
+class CrossRegionTransferInput(BaseModel):
+    enabled: bool = False
+    destination_region: str = Field(default="", max_length=80)
+    include_dr_storage_copy: bool = True
+    initial_replication_gb: float = Field(default=0, ge=0)
+    monthly_changed_data_gb: float = Field(default=0, ge=0)
+    monthly_cross_region_read_gb: float = Field(default=0, ge=0)
+    amortize_initial_months: int = Field(default=0, ge=0, le=120)
+    transfer_price_per_gb_override: float | None = Field(default=None, ge=0)
+
+
 class EstimateRequest(BaseModel):
     scenario_key: str = Field(default="archive_only", min_length=1)
     dataset: DatasetInput
@@ -105,6 +122,7 @@ class EstimateRequest(BaseModel):
     sql_compute: SQLComputeInput
     job_compute: JobComputeInput
     ai_bi: AIBIInput = Field(default_factory=AIBIInput)
+    cross_region_transfer: CrossRegionTransferInput = Field(default_factory=CrossRegionTransferInput)
     buffer_percentage: float | None = Field(default=None, ge=0, le=1000)
 
 
@@ -129,6 +147,8 @@ class EstimateResponse(BaseModel):
     monthly_sql_compute_cost: float
     monthly_job_compute_cost: float
     monthly_ai_bi_cost: float
+    monthly_cross_region_transfer_cost: float
+    one_time_cross_region_transfer_cost: float
     total_monthly_estimate: float
     total_annual_estimate: float
     estimate_with_buffer_monthly: float
