@@ -50,6 +50,89 @@ button {
   border: 0;
 }
 
+.login-shell {
+  min-height: 125vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background:
+    linear-gradient(rgba(214, 219, 229, 0.48) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(214, 219, 229, 0.48) 1px, transparent 1px),
+    radial-gradient(circle at 72% 12%, rgba(255, 212, 57, 0.22), transparent 28rem),
+    linear-gradient(180deg, #ffffff 0%, #f8f8f6 55%, #f1f3f7 100%);
+  background-size: 48px 48px, 48px 48px, auto, auto;
+}
+
+.login-panel {
+  width: min(100%, 470px);
+  border: 1px solid rgba(224, 228, 236, 0.96);
+  border-radius: 22px;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 28px 70px rgba(17, 19, 24, 0.16);
+  backdrop-filter: blur(16px);
+}
+
+.login-brand {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 26px;
+  border: 1px solid #303541;
+  border-radius: 16px;
+  padding: 14px;
+  background: linear-gradient(135deg, #191c23 0%, #111318 100%);
+}
+
+.login-brand svg {
+  color: var(--accent);
+}
+
+.login-brand h1 {
+  color: #f7f7f4;
+}
+
+.login-copy {
+  margin-bottom: 20px;
+}
+
+.login-copy h2 {
+  font-size: clamp(2rem, 4vw, 3rem);
+}
+
+.login-copy p,
+.login-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.login-form {
+  display: grid;
+  gap: 14px;
+}
+
+.login-submit {
+  width: 100%;
+  justify-content: center;
+}
+
+.login-error {
+  border: 1px solid #fecdca;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff1f3;
+  color: #b42318;
+  font-weight: 760;
+}
+
+.login-note {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+  font-size: 0.86rem;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr);
@@ -188,6 +271,33 @@ h3 {
 
 .step-list button.active svg,
 .step-list button:hover svg {
+  color: var(--accent);
+}
+
+.logout-button {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border: 1px solid #2f3541;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #181b22;
+  color: #d8dde7;
+  text-align: left;
+  font-weight: 740;
+}
+
+.logout-button svg {
+  color: #8d96a8;
+}
+
+.logout-button:hover {
+  border-color: rgba(255, 212, 57, 0.42);
+  color: #ffffff;
+}
+
+.logout-button:hover svg {
   color: var(--accent);
 }
 

@@ -82,6 +82,21 @@ Then open:
 
 Docker remains useful when you want the containerized setup, closer deployment parity, or a clean isolated environment.
 
+## Simple login
+
+The frontend includes a lightweight login gate for internal demos. By default:
+
+- Username: `admin`
+- Password: `databricks`
+
+Override these at frontend build time with:
+
+```bash
+VITE_APP_USERNAME=my-user VITE_APP_PASSWORD=my-password npm run build
+```
+
+This is not a replacement for production SSO. For a company deployment, put the app behind the internal SSO/VPN/gateway and use these credentials only as a simple first-pass gate.
+
 ## Tests
 
 ```bash

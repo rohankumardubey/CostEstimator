@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { FormEvent, ReactNode } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -14,6 +14,7 @@ import {
   FileSpreadsheet,
   Layers,
   Loader2,
+  LogOut,
   RefreshCw,
   ShieldAlert,
   Sparkles
@@ -45,6 +46,9 @@ import type {
 } from "./types";
 
 const COLORS = ["#2563eb", "#059669", "#dc6803", "#7c3aed", "#475467"];
+const AUTH_SESSION_KEY = "databricks-cost-estimator-authenticated";
+const LOGIN_USERNAME = import.meta.env.VITE_APP_USERNAME ?? "admin";
+const LOGIN_PASSWORD = import.meta.env.VITE_APP_PASSWORD ?? "databricks";
 
 const defaultDataset: DatasetInput = {
   team_name: "Example Data Team",
@@ -122,6 +126,10 @@ function App() {
   const loadEstimateInputRef = useRef<HTMLInputElement | null>(null);
   const activeSectionLockRef = useRef<EstimatorSection | null>(null);
   const activeSectionLockTimeoutRef = useRef<number | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => window.sessionStorage.getItem(AUTH_SESSION_KEY) === "true");
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [pricing, setPricing] = useState<PricingConfig | null>(null);
   const [scenarios, setScenarios] = useState<Record<string, ScenarioConfig>>({});
   const [selectedScenario, setSelectedScenario] = useState("archive_only");
@@ -131,7 +139,7 @@ function App() {
   const [jobCompute, setJobCompute] = useState<JobComputeInput>(defaultJob);
   const [aiBi, setAiBi] = useState<AIBIInput>(defaultAiBi);
   const [bufferPercentage, setBufferPercentage] = useState<number | null>(null);
-  const [currentPage, setCurrentPage] = useState<"estimator" | "knowledge">("estimator");
+  const [currentPage, setCurrentPage] = useState<"estimator" | "knowledge">("knowledge");
   const [activeSection, setActiveSection] = useState<EstimatorSection>("scenario");
   const [estimate, setEstimate] = useState<EstimateResponse | null>(null);
   const [scenarioEstimates, setScenarioEstimates] = useState<EstimateResponse[]>([]);
@@ -141,6 +149,9 @@ function App() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
     Promise.all([getPricingConfig(), getScenarios()])
       .then(([pricingConfig, scenarioConfig]) => {
         setPricing(pricingConfig);
@@ -154,9 +165,12 @@ function App() {
         }));
       })
       .catch((err: Error) => setError(err.message));
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
     if (!pricing || !isBackgroundPricingRefreshPending(pricing)) {
       return;
     }
@@ -190,9 +204,12 @@ function App() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [pricing?.pricing_source?.updated_at]);
+  }, [isAuthenticated, pricing?.pricing_source?.updated_at]);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
     if (currentPage !== "estimator") {
       return;
     }
@@ -211,7 +228,7 @@ function App() {
       window.removeEventListener("scroll", updateActiveSection);
       window.removeEventListener("resize", updateActiveSection);
     };
-  }, [currentPage]);
+  }, [currentPage, isAuthenticated]);
 
   useEffect(() => {
     return () => {
@@ -235,7 +252,7 @@ function App() {
   );
 
   useEffect(() => {
-    if (!pricing) {
+    if (!isAuthenticated || !pricing) {
       return;
     }
     const timer = window.setTimeout(() => {
@@ -250,7 +267,7 @@ function App() {
         .finally(() => setLoadingEstimate(false));
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [pricing, requestPayload]);
+  }, [isAuthenticated, pricing, requestPayload]);
 
   const cloudConfig = pricing?.cloud[dataset.cloud_provider];
   const regionConfig = cloudConfig?.regions[dataset.region];
@@ -418,6 +435,29 @@ function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (loginUsername.trim() === LOGIN_USERNAME && loginPassword === LOGIN_PASSWORD) {
+      window.sessionStorage.setItem(AUTH_SESSION_KEY, "true");
+      setIsAuthenticated(true);
+      setCurrentPage("knowledge");
+      setLoginPassword("");
+      setLoginError(null);
+      window.scrollTo({ top: 0 });
+      return;
+    }
+    setLoginError("Invalid username or password.");
+  }
+
+  function handleLogout() {
+    window.sessionStorage.removeItem(AUTH_SESSION_KEY);
+    setIsAuthenticated(false);
+    setCurrentPage("knowledge");
+    setLoginUsername("");
+    setLoginPassword("");
+    setLoginError(null);
+  }
+
   const breakdownData = estimate?.components.filter((component) => component.monthly_cost > 0) ?? [];
   const annualData = estimate
     ? [
@@ -435,6 +475,19 @@ function App() {
     () => buildScenarioRecommendation(requestPayload, scenarios),
     [requestPayload, scenarios]
   );
+
+  if (!isAuthenticated) {
+    return (
+      <LoginPage
+        username={loginUsername}
+        password={loginPassword}
+        error={loginError}
+        onUsernameChange={setLoginUsername}
+        onPasswordChange={setLoginPassword}
+        onSubmit={handleLogin}
+      />
+    );
+  }
 
   return (
     <main className="app-shell">
@@ -483,6 +536,10 @@ function App() {
             <span>Assumptions</span>
           </button>
         </nav>
+        <button type="button" className="logout-button" onClick={handleLogout}>
+          <LogOut size={17} />
+          <span>Sign out</span>
+        </button>
         <div className="privacy-callout">
           <ShieldAlert aria-hidden="true" />
           <span>Enter metadata only. Do not enter sensitive source content or raw dataset details.</span>
@@ -946,6 +1003,65 @@ function App() {
         </div>
           </>
         )}
+      </section>
+    </main>
+  );
+}
+
+function LoginPage({
+  username,
+  password,
+  error,
+  onUsernameChange,
+  onPasswordChange,
+  onSubmit
+}: {
+  username: string;
+  password: string;
+  error: string | null;
+  onUsernameChange: (value: string) => void;
+  onPasswordChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <main className="login-shell">
+      <section className="login-panel">
+        <div className="login-brand">
+          <Database aria-hidden="true" />
+          <div>
+            <p className="eyebrow">Internal platform tool</p>
+            <h1>Databricks Cost Estimator</h1>
+          </div>
+        </div>
+        <div className="login-copy">
+          <h2>Sign in</h2>
+          <p>Use your internal estimator credentials to continue to the Knowledge Base and scenario planner.</p>
+        </div>
+        <form className="login-form" onSubmit={onSubmit}>
+          <label className="field">
+            <span>Username</span>
+            <input
+              type="text"
+              autoComplete="username"
+              value={username}
+              onChange={(event) => onUsernameChange(event.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span>Password</span>
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => onPasswordChange(event.target.value)}
+            />
+          </label>
+          {error ? <div className="login-error">{error}</div> : null}
+          <button type="submit" className="primary-button login-submit">
+            Sign in
+          </button>
+        </form>
+        <p className="login-note">Metadata only. Do not enter source documents, employee records, payroll details, or sensitive personal data.</p>
       </section>
     </main>
   );
