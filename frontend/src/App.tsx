@@ -170,6 +170,7 @@ function App() {
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginIsSubmitting, setLoginIsSubmitting] = useState(false);
   const [pricing, setPricing] = useState<PricingConfig | null>(null);
   const [scenarios, setScenarios] = useState<Record<string, ScenarioConfig>>({});
   const [selectedScenario, setSelectedScenario] = useState("archive_only");
@@ -500,14 +501,19 @@ function App() {
   function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (loginUsername.trim() === LOGIN_USERNAME && loginPassword === LOGIN_PASSWORD) {
-      window.sessionStorage.setItem(AUTH_SESSION_KEY, "true");
-      setIsAuthenticated(true);
-      setCurrentPage("knowledge");
-      setLoginPassword("");
       setLoginError(null);
-      window.scrollTo({ top: 0 });
+      setLoginIsSubmitting(true);
+      window.setTimeout(() => {
+        window.sessionStorage.setItem(AUTH_SESSION_KEY, "true");
+        setIsAuthenticated(true);
+        setCurrentPage("knowledge");
+        setLoginPassword("");
+        setLoginIsSubmitting(false);
+        window.scrollTo({ top: 0 });
+      }, 900);
       return;
     }
+    setLoginIsSubmitting(false);
     setLoginError("Invalid username or password.");
   }
 
@@ -544,6 +550,7 @@ function App() {
         username={loginUsername}
         password={loginPassword}
         error={loginError}
+        isSubmitting={loginIsSubmitting}
         onUsernameChange={setLoginUsername}
         onPasswordChange={setLoginPassword}
         onSubmit={handleLogin}
@@ -1201,6 +1208,7 @@ function LoginPage({
   username,
   password,
   error,
+  isSubmitting,
   onUsernameChange,
   onPasswordChange,
   onSubmit
@@ -1208,50 +1216,90 @@ function LoginPage({
   username: string;
   password: string;
   error: string | null;
+  isSubmitting: boolean;
   onUsernameChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <main className="login-shell">
-      <section className="login-panel">
-        <div className="login-brand">
-          <Database aria-hidden="true" />
-          <div>
-            <p className="eyebrow">Internal platform tool</p>
-            <h1>Databricks Cost Estimator</h1>
+    <main className={`login-shell ${isSubmitting ? "signing-in" : ""}`}>
+      <div className="login-experience">
+        <section className="login-visual" aria-label="Databricks cost planning illustration">
+          <div className="night-sky" aria-hidden="true">
+            <span className="star star-one" />
+            <span className="star star-two" />
+            <span className="star star-three" />
+            <span className="moon" />
+            <span className="cloud cloud-one" />
+            <span className="cloud cloud-two" />
           </div>
-        </div>
-        <div className="login-copy">
-          <h2>Sign in</h2>
-          <p>Use your internal estimator credentials to continue to the Knowledge Base and scenario planner.</p>
-        </div>
-        <form className="login-form" onSubmit={onSubmit}>
-          <label className="field">
-            <span>Username</span>
-            <input
-              type="text"
-              autoComplete="username"
-              value={username}
-              onChange={(event) => onUsernameChange(event.target.value)}
-            />
-          </label>
-          <label className="field">
-            <span>Password</span>
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => onPasswordChange(event.target.value)}
-            />
-          </label>
-          {error ? <div className="login-error">{error}</div> : null}
-          <button type="submit" className="primary-button login-submit">
-            Sign in
-          </button>
-        </form>
-        <p className="login-note">Metadata only. Do not enter source documents, employee records, payroll details, or sensitive personal data.</p>
-      </section>
+          <div className="blueprint-scene" aria-hidden="true">
+            <div className="platform-tower tower-small">
+              <span />
+              <span />
+              <span />
+            </div>
+            <div className="platform-tower tower-large">
+              <span />
+              <span />
+              <span />
+              <span />
+            </div>
+            <div className="mountain ridge-back" />
+            <div className="mountain ridge-front" />
+            <div className="water-plane" />
+            <div className="data-light light-one" />
+            <div className="data-light light-two" />
+            <div className="data-light light-three" />
+          </div>
+        </section>
+
+        <section className="login-panel">
+          <div className="login-brand">
+            <Database aria-hidden="true" />
+            <div>
+              <p className="eyebrow">Internal platform tool</p>
+              <h1>Databricks Cost Estimator</h1>
+            </div>
+          </div>
+          <div className="login-copy">
+            <h2>Sign in</h2>
+            <p>Continue to the Knowledge Base and scenario planner.</p>
+          </div>
+          <form className="login-form" onSubmit={onSubmit}>
+            <label className="field">
+              <span>Username</span>
+              <input
+                type="text"
+                autoComplete="username"
+                value={username}
+                onChange={(event) => onUsernameChange(event.target.value)}
+                disabled={isSubmitting}
+              />
+            </label>
+            <label className="field">
+              <span>Password</span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => onPasswordChange(event.target.value)}
+                disabled={isSubmitting}
+              />
+            </label>
+            {error ? <div className="login-error">{error}</div> : null}
+            <button type="submit" className="primary-button login-submit" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 size={16} className="spin-icon" /> Preparing estimator
+                </>
+              ) : (
+                "Sign in"
+              )}
+            </button>
+          </form>
+        </section>
+      </div>
     </main>
   );
 }

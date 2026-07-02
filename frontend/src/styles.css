@@ -51,26 +51,26 @@ button {
 }
 
 .login-shell {
-  min-height: 125vh;
+  min-height: 100vh;
   display: grid;
-  place-items: center;
-  padding: 32px;
+  align-items: center;
+  padding: 36px;
   background:
     linear-gradient(rgba(214, 219, 229, 0.48) 1px, transparent 1px),
     linear-gradient(90deg, rgba(214, 219, 229, 0.48) 1px, transparent 1px),
-    radial-gradient(circle at 72% 12%, rgba(255, 212, 57, 0.22), transparent 28rem),
+    radial-gradient(circle at 72% 12%, rgba(37, 99, 235, 0.12), transparent 28rem),
+    radial-gradient(circle at 82% 82%, rgba(255, 212, 57, 0.18), transparent 24rem),
     linear-gradient(180deg, #ffffff 0%, #f8f8f6 55%, #f1f3f7 100%);
   background-size: 48px 48px, 48px 48px, auto, auto;
 }
 
-.login-panel {
-  width: min(100%, 470px);
-  border: 1px solid rgba(224, 228, 236, 0.96);
-  border-radius: 22px;
-  padding: 24px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 28px 70px rgba(17, 19, 24, 0.16);
-  backdrop-filter: blur(16px);
+.login-experience {
+  width: min(100%, 1180px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.18fr) minmax(360px, 0.82fr);
+  gap: 26px;
+  align-items: stretch;
 }
 
 .login-brand {
@@ -115,6 +115,7 @@ button {
 .login-submit {
   width: 100%;
   justify-content: center;
+  min-height: 46px;
 }
 
 .login-error {
@@ -131,6 +132,336 @@ button {
   border-top: 1px solid var(--line);
   padding-top: 14px;
   font-size: 0.86rem;
+}
+
+.spin-icon {
+  animation: iconSpin 850ms linear infinite;
+}
+
+.login-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 18px;
+  display: grid;
+  place-items: center;
+  zoom: 1.25;
+  background:
+    radial-gradient(circle at 74% 18%, rgba(0, 187, 255, 0.55), transparent 22rem),
+    linear-gradient(135deg, #111044 0%, #004f93 46%, #02b8de 100%);
+}
+
+.login-experience {
+  width: min(100%, 1220px);
+  min-height: min(760px, calc(100dvh - 36px));
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(420px, 0.78fr);
+  gap: 0;
+  align-items: stretch;
+  border-radius: 0;
+  overflow: hidden;
+  box-shadow: 0 32px 80px rgba(0, 21, 56, 0.34);
+}
+
+.login-visual,
+.login-panel {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.login-visual {
+  position: relative;
+  min-height: min(760px, calc(100dvh - 36px));
+  padding: 0;
+  display: block;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 68% 20%, rgba(255, 255, 255, 0.32), transparent 11rem),
+    linear-gradient(135deg, #10104a 0%, #004a8e 52%, #05bde6 100%);
+}
+
+.login-visual::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent 42%),
+    radial-gradient(circle at 18% 28%, rgba(0, 200, 255, 0.16), transparent 14rem);
+}
+
+.night-sky,
+.blueprint-scene {
+  position: absolute;
+  inset: 0;
+}
+
+.star,
+.moon,
+.cloud,
+.data-light {
+  position: absolute;
+  display: block;
+}
+
+.star {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.9);
+  animation: starBlink 3.4s ease-in-out infinite;
+}
+
+.star-one {
+  left: 12%;
+  top: 10%;
+}
+
+.star-two {
+  left: 44%;
+  top: 7%;
+  animation-delay: 700ms;
+}
+
+.star-three {
+  left: 77%;
+  top: 30%;
+  animation-delay: 1.3s;
+}
+
+.moon {
+  left: 68%;
+  top: 14%;
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 0 70px rgba(255, 255, 255, 0.66);
+}
+
+.cloud {
+  height: 46px;
+  border-radius: 48px 48px 12px 12px;
+  background: rgba(8, 39, 108, 0.42);
+}
+
+.cloud::before,
+.cloud::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  border-radius: 999px 999px 0 0;
+  background: inherit;
+}
+
+.cloud::before {
+  left: 20px;
+  width: 60px;
+  height: 64px;
+}
+
+.cloud::after {
+  right: 20px;
+  width: 78px;
+  height: 78px;
+}
+
+.cloud-one {
+  left: 6%;
+  top: 12%;
+  width: 170px;
+  opacity: 0.62;
+}
+
+.cloud-two {
+  right: 12%;
+  top: 31%;
+  width: 230px;
+  opacity: 0.4;
+}
+
+.blueprint-scene {
+  z-index: 1;
+}
+
+.platform-tower {
+  position: absolute;
+  bottom: 230px;
+  width: 118px;
+  height: 156px;
+  background: linear-gradient(135deg, #043469 0%, #00a8e6 100%);
+  clip-path: polygon(50% 0, 100% 33%, 100% 100%, 0 100%, 0 33%);
+  filter: drop-shadow(0 22px 30px rgba(0, 22, 70, 0.32));
+}
+
+.tower-small {
+  left: 92px;
+  bottom: 204px;
+  width: 96px;
+  height: 116px;
+  opacity: 0.9;
+}
+
+.tower-large {
+  left: 256px;
+}
+
+.platform-tower::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 24px;
+  background: #07184b;
+}
+
+.platform-tower span {
+  position: relative;
+  z-index: 1;
+  top: 58px;
+  display: inline-block;
+  width: 14px;
+  height: 24px;
+  margin-left: 13px;
+  background: #ffffff;
+  box-shadow: 0 0 18px rgba(255, 255, 255, 0.34);
+}
+
+.tower-small span {
+  top: 46px;
+  width: 11px;
+  height: 18px;
+  margin-left: 10px;
+}
+
+.platform-tower::before {
+  content: "";
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: -118px;
+  height: 120px;
+  background:
+    linear-gradient(90deg, transparent 0 20%, #07184b 21% 28%, transparent 29% 46%, #07184b 47% 54%, transparent 55% 72%, #07184b 73% 80%, transparent 81%),
+    repeating-linear-gradient(180deg, transparent 0 27px, rgba(7, 24, 75, 0.72) 28px 35px);
+}
+
+.mountain {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.ridge-back {
+  height: 286px;
+  background: linear-gradient(135deg, rgba(12, 24, 83, 0.92), rgba(0, 123, 193, 0.42));
+  clip-path: polygon(0 60%, 24% 28%, 40% 52%, 60% 32%, 78% 48%, 100% 20%, 100% 100%, 0 100%);
+}
+
+.ridge-front {
+  height: 226px;
+  background: linear-gradient(135deg, #10104a 0%, #005ea8 64%, #00bfe7 100%);
+  clip-path: polygon(0 72%, 20% 28%, 38% 76%, 52% 42%, 72% 88%, 86% 58%, 100% 88%, 100% 100%, 0 100%);
+}
+
+.water-plane {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 214px;
+  height: 42px;
+  background: rgba(0, 198, 235, 0.34);
+  box-shadow: 0 0 42px rgba(0, 198, 235, 0.22);
+}
+
+.data-light {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #03d5ff;
+  box-shadow: 0 0 18px #03d5ff;
+  animation: lightDrift 4s ease-in-out infinite;
+}
+
+.light-one {
+  left: 36%;
+  top: 18%;
+}
+
+.light-two {
+  left: 64%;
+  top: 38%;
+  animation-delay: 800ms;
+}
+
+.light-three {
+  left: 19%;
+  top: 44%;
+  animation-delay: 1.5s;
+}
+
+.login-panel {
+  min-height: min(760px, calc(100dvh - 36px));
+  align-self: stretch;
+  padding: 74px 52px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: #ffffff;
+}
+
+.login-brand {
+  margin-bottom: 54px;
+  border-color: #101318;
+  border-radius: 0;
+  padding: 18px;
+  background: #101318;
+}
+
+.login-copy {
+  margin-bottom: 24px;
+}
+
+.login-copy h2 {
+  color: #101318;
+  font-size: clamp(2.8rem, 5vw, 4rem);
+  line-height: 0.95;
+}
+
+.login-copy p,
+.login-note {
+  color: #737b8c;
+}
+
+.login-form {
+  gap: 15px;
+}
+
+.login-form .field input {
+  min-height: 52px;
+  border-radius: 4px;
+  background: #f5f6f8;
+}
+
+.login-submit {
+  min-height: 52px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #111044 0%, #0098e6 100%);
+  box-shadow: 0 18px 38px rgba(0, 152, 230, 0.22);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.signing-in .login-visual::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.24) 46%, transparent 72%);
+  animation: loginSweep 900ms ease-in-out forwards;
 }
 
 .app-shell {
@@ -537,6 +868,48 @@ h3 {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes iconSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes starBlink {
+  0%,
+  100% {
+    opacity: 0.38;
+    transform: scale(0.9);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+@keyframes lightDrift {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.42;
+  }
+
+  50% {
+    transform: translateY(-12px);
+    opacity: 1;
+  }
+}
+
+@keyframes loginSweep {
+  from {
+    transform: translateX(-120%);
+  }
+
+  to {
+    transform: translateX(120%);
   }
 }
 
@@ -1278,6 +1651,24 @@ summary {
 }
 
 @media (max-width: 980px) {
+  .login-shell {
+    padding: 18px;
+  }
+
+  .login-experience {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .login-visual {
+    min-height: 520px;
+  }
+
+  .login-panel {
+    min-height: auto;
+    padding: 34px;
+  }
+
   .app-shell {
     grid-template-columns: 1fr;
   }
@@ -1301,6 +1692,18 @@ summary {
 }
 
 @media (max-width: 720px) {
+  .login-visual {
+    min-height: 430px;
+  }
+
+  .tower-large {
+    left: 196px;
+  }
+
+  .login-panel {
+    padding: 26px;
+  }
+
   .content {
     padding: 16px;
   }
