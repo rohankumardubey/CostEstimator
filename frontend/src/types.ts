@@ -69,6 +69,12 @@ export interface CrossRegionTransferInput {
   transfer_price_per_gb_override?: number | null;
 }
 
+export interface SupportCostInput {
+  support_cost_percentage: number;
+  databricks_discount_percentage: number;
+  cloud_discount_percentage: number;
+}
+
 export interface EstimateRequest {
   scenario_key: string;
   dataset: DatasetInput;
@@ -77,6 +83,7 @@ export interface EstimateRequest {
   job_compute: JobComputeInput;
   ai_bi: AIBIInput;
   cross_region_transfer: CrossRegionTransferInput;
+  support_cost: SupportCostInput;
   buffer_percentage?: number | null;
 }
 
@@ -103,6 +110,8 @@ export interface EstimateResponse {
   monthly_ai_bi_cost: number;
   monthly_cross_region_transfer_cost: number;
   one_time_cross_region_transfer_cost: number;
+  monthly_discount_amount: number;
+  monthly_support_cost: number;
   total_monthly_estimate: number;
   total_annual_estimate: number;
   estimate_with_buffer_monthly: number;

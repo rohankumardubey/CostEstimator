@@ -15,6 +15,7 @@ from .models import (
     SQLComputeInput,
     ScenarioComparisonResponse,
     StorageInput,
+    SupportCostInput,
 )
 from .pricing import (
     get_ai_bi_dbu_rate,
@@ -276,6 +277,51 @@ def calculate_ai_bi_cost(ai_bi: AIBIInput, pricing: dict[str, Any]) -> CostCompo
     )
 
 
+def calculate_discount_adjustment(
+    support_cost: SupportCostInput,
+    cloud_monthly_subtotal: float,
+    databricks_monthly_subtotal: float,
+) -> CostComponent:
+    cloud_discount = cloud_monthly_subtotal * support_cost.cloud_discount_percentage / 100
+    databricks_discount = (
+        databricks_monthly_subtotal
+        * support_cost.databricks_discount_percentage
+        / 100
+    )
+    total_discount = cloud_discount + databricks_discount
+
+    return CostComponent(
+        label="Discount adjustment",
+        monthly_cost=-_round_money(total_discount),
+        assumptions={
+            "cloud_discount_percentage": support_cost.cloud_discount_percentage,
+            "databricks_discount_percentage": support_cost.databricks_discount_percentage,
+            "cloud_monthly_subtotal": _round_money(cloud_monthly_subtotal),
+            "databricks_monthly_subtotal": _round_money(databricks_monthly_subtotal),
+            "cloud_discount_amount": _round_money(cloud_discount),
+            "databricks_discount_amount": _round_money(databricks_discount),
+            "discounts_included": total_discount > 0,
+            "note": "Discounts default to 0% and are not included unless entered.",
+        },
+    )
+
+
+def calculate_support_cost(support_cost: SupportCostInput, monthly_subtotal: float) -> CostComponent:
+    percentage = support_cost.support_cost_percentage
+    monthly_cost = monthly_subtotal * percentage / 100
+
+    return CostComponent(
+        label="Support cost uplift",
+        monthly_cost=_round_money(monthly_cost),
+        assumptions={
+            "support_cost_percentage": percentage,
+            "calculation_method": "percentage",
+            "monthly_subtotal_after_discounts_before_support": _round_money(monthly_subtotal),
+            "note": "Support defaults to 0% and is applied after discounts but before buffer.",
+        },
+    )
+
+
 def calculate_total_estimate(
     request: EstimateRequest,
     pricing: dict[str, Any],
@@ -300,8 +346,21 @@ def calculate_total_estimate(
         request.cross_region_transfer,
         pricing,
     )
+    subtotal_components = [storage, sql, jobs, ai_bi, cross_region_dr]
+    cloud_monthly_subtotal = storage.monthly_cost + cross_region_dr.monthly_cost
+    databricks_monthly_subtotal = sql.monthly_cost + jobs.monthly_cost + ai_bi.monthly_cost
+    discount = calculate_discount_adjustment(
+        request.support_cost,
+        cloud_monthly_subtotal,
+        databricks_monthly_subtotal,
+    )
+    monthly_subtotal_after_discounts = sum(component.monthly_cost for component in subtotal_components) + discount.monthly_cost
+    support = calculate_support_cost(
+        request.support_cost,
+        monthly_subtotal_after_discounts,
+    )
 
-    components = [storage, sql, jobs, ai_bi, cross_region_dr]
+    components = [*subtotal_components, discount, support]
     total_monthly = sum(component.monthly_cost for component in components)
     buffer_percentage = float(
         request.buffer_percentage
@@ -323,6 +382,9 @@ def calculate_total_estimate(
         "configured_replication_factor": request.dataset.replication_factor,
         "replication_factor": storage.assumptions["replication_factor"],
         "cross_region_dr_enabled": request.cross_region_transfer.enabled,
+        "support_cost_percentage": request.support_cost.support_cost_percentage,
+        "databricks_discount_percentage": request.support_cost.databricks_discount_percentage,
+        "cloud_discount_percentage": request.support_cost.cloud_discount_percentage,
         "dataset_size_gb": request.dataset.total_data_size_gb,
         "file_count": request.dataset.file_count,
         "scenario_description": scenario.get("description", ""),
@@ -343,6 +405,8 @@ def calculate_total_estimate(
         one_time_cross_region_transfer_cost=float(
             cross_region_dr.assumptions.get("one_time_initial_replication_cost", 0)
         ),
+        monthly_discount_amount=abs(discount.monthly_cost),
+        monthly_support_cost=support.monthly_cost,
         total_monthly_estimate=_round_money(total_monthly),
         total_annual_estimate=_round_money(total_annual),
         estimate_with_buffer_monthly=_round_money(estimate_with_buffer_monthly),

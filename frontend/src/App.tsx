@@ -44,7 +44,8 @@ import type {
   RedundancyModel,
   SQLComputeInput,
   ScenarioConfig,
-  StorageInput
+  StorageInput,
+  SupportCostInput
 } from "./types";
 
 const COLORS = ["#2563eb", "#059669", "#dc6803", "#7c3aed", "#475467"];
@@ -137,13 +138,19 @@ const defaultCrossRegionTransfer: CrossRegionTransferInput = {
   transfer_price_per_gb_override: null
 };
 
+const defaultSupportCost: SupportCostInput = {
+  support_cost_percentage: 0,
+  databricks_discount_percentage: 0,
+  cloud_discount_percentage: 0
+};
+
 type LoadedEstimateState = {
   filename: string;
   savedAt?: string;
   action: "loaded" | "saved" | "reset";
 };
 
-type EstimatorSection = "scenario" | "dataset" | "storage" | "compute" | "recommendation" | "results" | "assumptions";
+type EstimatorSection = "scenario" | "results" | "dataset" | "storage" | "compute" | "recommendation" | "assumptions";
 
 const ESTIMATOR_SECTIONS: EstimatorSection[] = [
   "scenario",
@@ -172,6 +179,7 @@ function App() {
   const [jobCompute, setJobCompute] = useState<JobComputeInput>(defaultJob);
   const [aiBi, setAiBi] = useState<AIBIInput>(defaultAiBi);
   const [crossRegionTransfer, setCrossRegionTransfer] = useState<CrossRegionTransferInput>(defaultCrossRegionTransfer);
+  const [supportCost, setSupportCost] = useState<SupportCostInput>(defaultSupportCost);
   const [bufferPercentage, setBufferPercentage] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState<"estimator" | "knowledge">("knowledge");
   const [activeSection, setActiveSection] = useState<EstimatorSection>("scenario");
@@ -280,9 +288,10 @@ function App() {
       job_compute: jobCompute,
       ai_bi: aiBi,
       cross_region_transfer: crossRegionTransfer,
+      support_cost: supportCost,
       buffer_percentage: bufferPercentage
     }),
-    [selectedScenario, dataset, storage, sqlCompute, jobCompute, aiBi, crossRegionTransfer, bufferPercentage]
+    [selectedScenario, dataset, storage, sqlCompute, jobCompute, aiBi, crossRegionTransfer, supportCost, bufferPercentage]
   );
 
   useEffect(() => {
@@ -332,11 +341,10 @@ function App() {
     }
     const defaultRegion = pricing.cloud[nextCloud].default_region;
     const scenario = scenarios[selectedScenario];
-    const destinationRegion = getDefaultDestinationRegion(defaultRegion, Object.keys(pricing.cloud[nextCloud].regions));
     setDataset((current) => ({ ...current, cloud_provider: nextCloud, region: defaultRegion }));
     setCrossRegionTransfer((current) => ({
       ...current,
-      destination_region: current.enabled ? destinationRegion : ""
+      destination_region: ""
     }));
     setStorage((current) => ({
       ...current,
@@ -422,6 +430,7 @@ function App() {
     setJobCompute(nextRequest.job_compute);
     setAiBi(nextRequest.ai_bi);
     setCrossRegionTransfer(nextRequest.cross_region_transfer ?? defaultCrossRegionTransfer);
+    setSupportCost(nextRequest.support_cost ?? defaultSupportCost);
     setBufferPercentage(nextRequest.buffer_percentage ?? pricing?.default_buffer_percentage ?? null);
   }
 
@@ -447,6 +456,7 @@ function App() {
     setJobCompute(defaultJob);
     setAiBi(defaultAiBi);
     setCrossRegionTransfer(defaultCrossRegionTransfer);
+    setSupportCost(defaultSupportCost);
     setBufferPercentage(pricing?.default_buffer_percentage ?? null);
     setLoadedEstimate({ filename: "Sample defaults", action: "reset" });
     setError(null);
@@ -466,7 +476,7 @@ function App() {
       activeSectionLockRef.current = null;
       setActiveSection(getVisibleEstimatorSection());
       activeSectionLockTimeoutRef.current = null;
-    }, 900);
+    }, 1300);
 
     window.setTimeout(() => {
       if (sectionId) {
@@ -567,21 +577,17 @@ function App() {
             <Database size={17} />
             <span>Dataset</span>
           </button>
-          <button type="button" className={currentPage === "estimator" && activeSection === "storage" ? "active" : ""} onClick={() => navigateToEstimator("storage")}>
+          <button
+            type="button"
+            className={currentPage === "estimator" && (activeSection === "storage" || activeSection === "compute") ? "active" : ""}
+            onClick={() => navigateToEstimator("compute")}
+          >
             <Cloud size={17} />
-            <span>Storage</span>
-          </button>
-          <button type="button" className={currentPage === "estimator" && activeSection === "compute" ? "active" : ""} onClick={() => navigateToEstimator("compute")}>
-            <BarChart3 size={17} />
-            <span>Compute</span>
+            <span>Storage &amp; compute</span>
           </button>
           <button type="button" className={currentPage === "estimator" && activeSection === "recommendation" ? "active" : ""} onClick={() => navigateToEstimator("recommendation")}>
             <BadgeCheck size={17} />
             <span>Recommendation</span>
-          </button>
-          <button type="button" className={currentPage === "estimator" && activeSection === "results" ? "active" : ""} onClick={() => navigateToEstimator("results")}>
-            <Download size={17} />
-            <span>Results</span>
           </button>
           <button type="button" className={currentPage === "estimator" && activeSection === "assumptions" ? "active" : ""} onClick={() => navigateToEstimator("assumptions")}>
             <ShieldAlert size={17} />
@@ -695,6 +701,8 @@ function App() {
             <KpiCard label="Job compute" value={money(estimate?.monthly_job_compute_cost, estimate?.currency)} />
             <KpiCard label="AI/BI optional" value={money(estimate?.monthly_ai_bi_cost, estimate?.currency)} />
             <KpiCard label="Cross-region DR" value={money(estimate?.monthly_cross_region_transfer_cost, estimate?.currency)} />
+            <KpiCard label="Discounts" value={estimate ? `-${money(estimate.monthly_discount_amount, estimate.currency)}` : "--"} />
+            <KpiCard label="Support uplift" value={money(estimate?.monthly_support_cost, estimate?.currency)} />
             <KpiCard label="Monthly estimate" value={money(estimate?.total_monthly_estimate, estimate?.currency)} strong />
             <KpiCard label="Annual estimate" value={money(estimate?.total_annual_estimate, estimate?.currency)} />
             <KpiCard label="With buffer" value={money(estimate?.estimate_with_buffer_annual, estimate?.currency)} />
@@ -749,7 +757,7 @@ function App() {
               </ResponsiveContainer>
             </ChartPanel>
 
-            <ChartPanel title="Storage vs compute" icon={<Cloud size={18} />}>
+            <ChartPanel title="Storage, compute, support" icon={<Cloud size={18} />}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   margin={{ top: 8, right: 14, left: 10, bottom: 32 }}
@@ -761,7 +769,8 @@ function App() {
                         (estimate?.monthly_sql_compute_cost ?? 0) +
                         (estimate?.monthly_job_compute_cost ?? 0) +
                         (estimate?.monthly_ai_bi_cost ?? 0)
-                    }
+                    },
+                    { name: "Support", value: estimate?.monthly_support_cost ?? 0 }
                   ]}
                 >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -811,7 +820,7 @@ function App() {
                   if (crossRegionTransfer.destination_region === value) {
                     setCrossRegionTransfer({
                       ...crossRegionTransfer,
-                      destination_region: getDefaultDestinationRegion(value, Object.keys(cloudConfig?.regions ?? {}))
+                      destination_region: ""
                     });
                   }
                 }}
@@ -898,13 +907,14 @@ function App() {
                   checked={crossRegionTransfer.enabled}
                   onChange={(event) => {
                     const enabled = event.target.checked;
+                    const autoDefaults = getCrossRegionAutoDefaults(dataset);
                     setCrossRegionTransfer({
                       ...crossRegionTransfer,
                       enabled,
                       include_dr_storage_copy: true,
-                      destination_region: enabled
-                        ? crossRegionTransfer.destination_region || getDefaultDestinationRegion(dataset.region, Object.keys(cloudConfig?.regions ?? {}))
-                        : crossRegionTransfer.destination_region
+                      initial_replication_gb: enabled ? autoDefaults.initialReplicationGb : crossRegionTransfer.initial_replication_gb,
+                      monthly_changed_data_gb: enabled ? autoDefaults.monthlyChangedDataGb : crossRegionTransfer.monthly_changed_data_gb,
+                      amortize_initial_months: enabled ? autoDefaults.amortizeInitialMonths : crossRegionTransfer.amortize_initial_months
                     });
                   }}
                 />
@@ -1017,7 +1027,7 @@ function App() {
             </label>
           </section>
 
-          <section className="panel">
+          <section className="panel" data-nav-section="compute">
             <PanelHeading title="Job and ingestion compute" subtitle="Scheduled pipelines, scans, and refreshes" />
             <div className="field-grid">
               <SelectField
@@ -1053,7 +1063,7 @@ function App() {
             </div>
           </section>
 
-          <section className="panel ai-panel">
+          <section className="panel ai-panel" data-nav-section="compute">
             <PanelHeading title="Optional AI/BI layer" subtitle="Future Genie-style natural-language question workload" />
             <label className="toggle-row">
               <input type="checkbox" checked={aiBi.enabled} onChange={(event) => setAiBi({ ...aiBi, enabled: event.target.checked })} />
@@ -1075,6 +1085,39 @@ function App() {
               />
               <NumberField label="AI/BI DBU/hour" value={aiBi.dbu_per_hour} onChange={(value) => setAiBi({ ...aiBi, dbu_per_hour: value })} disabled={!aiBi.enabled} />
               <NumberField label="AI/BI DBU rate (internal or public list)" value={aiBi.dbu_rate ?? getDefaultAiBiDbuRate(pricing)} onChange={(value) => setAiBi({ ...aiBi, dbu_rate: value })} disabled={!aiBi.enabled} />
+            </div>
+          </section>
+
+          <section className="panel support-panel" data-nav-section="compute">
+            <PanelHeading title="Support and discounts" subtitle="Optional commercial adjustments" />
+            <div className="field-grid compact">
+              <NumberField
+                label="Support cost %"
+                value={supportCost.support_cost_percentage}
+                onChange={(value) => setSupportCost({ ...supportCost, support_cost_percentage: value })}
+              />
+              <NumberField
+                label="Databricks discount %"
+                value={supportCost.databricks_discount_percentage}
+                onChange={(value) => setSupportCost({ ...supportCost, databricks_discount_percentage: value })}
+              />
+              <NumberField
+                label="Cloud discount %"
+                value={supportCost.cloud_discount_percentage}
+                onChange={(value) => setSupportCost({ ...supportCost, cloud_discount_percentage: value })}
+              />
+            </div>
+            <div className="enterprise-note-card compact">
+              <ShieldAlert size={18} />
+              <div>
+                <strong>Discounts default to 0%</strong>
+                <span>
+                  Discounts are not included unless entered here. Databricks discount applies to DBU compute; cloud discount applies to storage and cross-region DR.
+                </span>
+                <small>
+                  Support uplift: {supportCost.support_cost_percentage}% after discounts, before buffer
+                </small>
+              </div>
             </div>
           </section>
 
@@ -1299,9 +1342,18 @@ function KnowledgeBasePage({ onBack }: { onBack: () => void }) {
             ]}
           />
           <KnowledgeCard
+            title="Support and discounts"
+            rows={[
+              ["Support cost %", "Optional percentage applied after discounts and before buffer."],
+              ["Databricks discount %", "Optional discount applied to SQL, jobs, and AI/BI compute costs."],
+              ["Cloud discount %", "Optional discount applied to storage and cross-region DR costs."],
+              ["Default", "All values default to 0%, so discounts are not included unless populated."]
+            ]}
+          />
+          <KnowledgeCard
             title="Results"
             rows={[
-              ["Monthly estimate", "Storage, SQL compute, jobs, and optional AI/BI combined."],
+              ["Monthly estimate", "Storage, SQL compute, jobs, optional AI/BI, DR, and support combined."],
               ["Annual estimate", "Monthly estimate multiplied by 12."],
               ["With buffer", "Estimate after applying the selected buffer percentage."],
               ["Cost per GB", "Monthly total divided by dataset size."],
@@ -1350,6 +1402,12 @@ function KnowledgeBasePage({ onBack }: { onBack: () => void }) {
             note="This layer is excluded from baseline estimates unless the AI/BI toggle is enabled."
           />
           <FormulaExampleCard
+            title="Support uplift"
+            formula="discounted subtotal x support %"
+            example="$1,000 x 10% = $100/month"
+            note="Support is percentage-only and is added after discount adjustment but before buffer."
+          />
+          <FormulaExampleCard
             title="Buffer"
             formula="total monthly estimate x (1 + buffer %)"
             example="$1,000 x 1.15 = $1,150/month with a 15% buffer"
@@ -1391,6 +1449,7 @@ function ChartPanel({ title, icon, children }: { title: string; icon: ReactNode;
 function PricingSourcePanel({ estimate, pricing }: { estimate: EstimateResponse; pricing: PricingConfig | null }) {
   const storage = getComponentAssumptions(estimate, "Storage");
   const crossRegion = getComponentAssumptions(estimate, "Cross-region DR");
+  const support = getComponentAssumptions(estimate, "Support cost uplift");
   const sql = getComponentAssumptions(estimate, "Databricks SQL compute");
   const jobs = getComponentAssumptions(estimate, "Job/ingestion compute");
   const aiBi = getComponentAssumptions(estimate, "AI/BI optional layer");
@@ -1450,6 +1509,20 @@ function PricingSourcePanel({ estimate, pricing }: { estimate: EstimateResponse;
             ["Source", labelize(String(crossRegion.price_source ?? "config_fallback"))]
           ]}
           note={String(crossRegion.pricing_note ?? "")}
+        />
+        <SourceCard
+          title="Support uplift"
+          status="manual"
+          badgeLabel="Editable"
+          rows={[
+            ["Method", labelize(String(support.calculation_method ?? "percentage"))],
+            ["Support cost %", `${String(support.support_cost_percentage ?? 0)}%`],
+            ["Cloud discount %", `${String(getComponentAssumptions(estimate, "Discount adjustment").cloud_discount_percentage ?? 0)}%`],
+            ["Databricks discount %", `${String(getComponentAssumptions(estimate, "Discount adjustment").databricks_discount_percentage ?? 0)}%`],
+            ["Discount amount", `-${money(estimate.monthly_discount_amount, estimate.currency)}`],
+            ["Subtotal before support", money(Number(support.monthly_subtotal_after_discounts_before_support ?? 0), estimate.currency)]
+          ]}
+          note={String(support.note ?? "")}
         />
         <SourceCard
           title="Databricks SQL"
@@ -1674,8 +1747,19 @@ function getRedundancyOption(value: RedundancyModel) {
   return REDUNDANCY_OPTIONS.find((option) => option.value === value) ?? REDUNDANCY_OPTIONS[0];
 }
 
-function getDefaultDestinationRegion(sourceRegion: string, regions: string[]) {
-  return regions.find((region) => region !== sourceRegion) ?? "";
+function getCrossRegionAutoDefaults(dataset: DatasetInput) {
+  return {
+    initialReplicationGb: roundEstimatorInput(dataset.total_data_size_gb),
+    monthlyChangedDataGb: roundEstimatorInput((dataset.total_data_size_gb * dataset.annual_growth_percentage) / 100 / 12),
+    amortizeInitialMonths: 12
+  };
+}
+
+function roundEstimatorInput(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.round(value * 100) / 100;
 }
 
 function getComponentAssumptions(estimate: EstimateResponse, label: string) {
@@ -1770,6 +1854,10 @@ function normalizeEstimateRequest(payload: unknown): EstimateRequest {
       ...defaultCrossRegionTransfer,
       ...(isRecord(payload.cross_region_transfer) ? payload.cross_region_transfer : {})
     } as CrossRegionTransferInput,
+    support_cost: {
+      ...defaultSupportCost,
+      ...(isRecord(payload.support_cost) ? payload.support_cost : {})
+    } as SupportCostInput,
     buffer_percentage: typeof payload.buffer_percentage === "number" ? payload.buffer_percentage : null
   };
 }
@@ -1801,11 +1889,24 @@ function isEstimatorSection(value: string): value is EstimatorSection {
 }
 
 function getVisibleEstimatorSection() {
-  const viewportAnchor = window.scrollY + 140;
+  const viewportAnchor = 150;
   let nextSection = ESTIMATOR_SECTIONS[0];
-  for (const section of ESTIMATOR_SECTIONS) {
-    const element = document.getElementById(section);
-    if (element && element.offsetTop <= viewportAnchor) {
+  let closestDistance = Number.POSITIVE_INFINITY;
+  const candidates = Array.from(document.querySelectorAll<HTMLElement>("[id], [data-nav-section]"))
+    .map((element) => ({
+      element,
+      section: element.dataset.navSection ?? element.id
+    }))
+    .filter((candidate): candidate is { element: HTMLElement; section: EstimatorSection } => isEstimatorSection(candidate.section));
+
+  for (const { element, section } of candidates) {
+    const rect = element.getBoundingClientRect();
+    if (rect.bottom < viewportAnchor) {
+      continue;
+    }
+    const distance = Math.abs(rect.top - viewportAnchor);
+    if (distance < closestDistance) {
+      closestDistance = distance;
       nextSection = section;
     }
   }

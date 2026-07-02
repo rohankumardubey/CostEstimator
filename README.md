@@ -13,6 +13,7 @@ The app is deterministic in its calculations and uses live public storage pricin
 - Optional future AI/BI or Genie-style usage.
 - Manual metadata-based estimation without uploading raw dataset files.
 - Optional cross-region DR estimates for replicated storage, changed-data transfer, and cross-region reads.
+- Optional support cost uplift and optional Databricks/cloud discount percentages.
 
 ## Architecture
 
@@ -190,6 +191,24 @@ monthly_ai_bi_cost =
   dbu_per_hour * dbu_rate * monthly_ai_bi_hours
 ```
 
+Support uplift defaults to zero and is visible in the UI:
+
+```text
+monthly_support_cost =
+  monthly_subtotal_after_discounts_before_support
+  * support_cost_percentage / 100
+```
+
+Discounts default to zero and are not included unless entered:
+
+```text
+monthly_discount_amount =
+  cloud_monthly_subtotal * cloud_discount_percentage / 100
+  + databricks_monthly_subtotal * databricks_discount_percentage / 100
+```
+
+Cloud discount applies to storage and cross-region DR. Databricks discount applies to SQL, jobs, and AI/BI compute. Support uplift is added after discounts and before the buffer is applied.
+
 Buffered estimate:
 
 ```text
@@ -207,6 +226,7 @@ The app is designed for manual entry of aggregate dataset metadata:
 - Environment count.
 - Redundancy model and storage copy multiplier.
 - Optional cross-region DR destination, initial replication GB, monthly changed-data GB, and monthly cross-region read GB.
+- Optional support cost percentage, Databricks discount percentage, and cloud discount percentage.
 
 Do not enter raw file contents, source document text, or sensitive business data.
 

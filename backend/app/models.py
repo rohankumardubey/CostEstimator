@@ -115,6 +115,12 @@ class CrossRegionTransferInput(BaseModel):
     transfer_price_per_gb_override: float | None = Field(default=None, ge=0)
 
 
+class SupportCostInput(BaseModel):
+    support_cost_percentage: float = Field(default=0, ge=0, le=1000)
+    databricks_discount_percentage: float = Field(default=0, ge=0, le=100)
+    cloud_discount_percentage: float = Field(default=0, ge=0, le=100)
+
+
 class EstimateRequest(BaseModel):
     scenario_key: str = Field(default="archive_only", min_length=1)
     dataset: DatasetInput
@@ -123,6 +129,7 @@ class EstimateRequest(BaseModel):
     job_compute: JobComputeInput
     ai_bi: AIBIInput = Field(default_factory=AIBIInput)
     cross_region_transfer: CrossRegionTransferInput = Field(default_factory=CrossRegionTransferInput)
+    support_cost: SupportCostInput = Field(default_factory=SupportCostInput)
     buffer_percentage: float | None = Field(default=None, ge=0, le=1000)
 
 
@@ -149,6 +156,8 @@ class EstimateResponse(BaseModel):
     monthly_ai_bi_cost: float
     monthly_cross_region_transfer_cost: float
     one_time_cross_region_transfer_cost: float
+    monthly_discount_amount: float
+    monthly_support_cost: float
     total_monthly_estimate: float
     total_annual_estimate: float
     estimate_with_buffer_monthly: float
