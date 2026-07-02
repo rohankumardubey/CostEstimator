@@ -598,9 +598,12 @@ function App() {
           <LogOut size={17} />
           <span>Sign out</span>
         </button>
-        <div className="privacy-callout">
-          <ShieldAlert aria-hidden="true" />
-          <span>Enter metadata only. Do not enter sensitive source content or raw dataset details.</span>
+        <div className="sidebar-footer-logo" aria-label="Flutter Entertainment">
+          <div className="footer-logo-mark">FE</div>
+          <div>
+            <span>Flutter</span>
+            <strong>Entertainment</strong>
+          </div>
         </div>
       </aside>
 
