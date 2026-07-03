@@ -1189,6 +1189,117 @@ h3 {
   font-weight: 700;
 }
 
+.confidence-card {
+  margin-bottom: 18px;
+  border: 1px solid #d8e2f7;
+  border-radius: 16px;
+  padding: 18px;
+  background:
+    radial-gradient(circle at 95% 0%, rgba(37, 99, 235, 0.1), transparent 20rem),
+    linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 14px 34px rgba(31, 45, 85, 0.08);
+}
+
+.confidence-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.confidence-card h4,
+.confidence-card h5,
+.confidence-card p {
+  margin: 0;
+}
+
+.confidence-card h4 {
+  color: var(--ink);
+  font-size: 1.08rem;
+}
+
+.confidence-card > p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.confidence-badge {
+  flex: 0 0 auto;
+  border: 1px solid #d8e2f7;
+  border-radius: 999px;
+  padding: 7px 11px;
+  background: #eff6ff;
+  color: #2558d9;
+  font-size: 0.76rem;
+  font-weight: 860;
+}
+
+.confidence-badge.high {
+  border-color: #bcefd0;
+  background: #f0fff7;
+  color: #087443;
+}
+
+.confidence-badge.medium {
+  border-color: #fedf89;
+  background: #fffbeb;
+  color: #915d00;
+}
+
+.confidence-badge.low {
+  border-color: #fecdca;
+  background: #fff1f3;
+  color: #b42318;
+}
+
+.confidence-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.confidence-grid > div {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.confidence-grid h5 {
+  color: #343945;
+  font-size: 0.86rem;
+}
+
+.confidence-grid ul {
+  display: grid;
+  gap: 9px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.confidence-grid li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: #475467;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.confidence-grid li svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: #2563eb;
+}
+
+.confidence-grid > div:first-child li svg {
+  color: #079455;
+}
+
 .chart-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1713,6 +1824,7 @@ summary {
   .knowledge-grid,
   .formula-grid,
   .pricing-source-grid,
+  .confidence-grid,
   .field-grid,
   .field-grid.compact,
   .assumption-list,

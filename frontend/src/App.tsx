@@ -741,6 +741,8 @@ function App() {
             <div className="success-panel">No estimate warnings found for the current inputs.</div>
           ) : null}
 
+          {estimate ? <ConfidenceExplanationCard estimate={estimate} request={requestPayload} pricing={pricing} /> : null}
+
           <div className="chart-grid">
             <ChartPanel title="Cost breakdown" icon={<BarChart3 size={18} />}>
               <ResponsiveContainer width="100%" height="100%">
@@ -1485,6 +1487,55 @@ function KpiCard({ label, value, strong = false }: { label: string; value: strin
   );
 }
 
+function ConfidenceExplanationCard({
+  estimate,
+  request,
+  pricing
+}: {
+  estimate: EstimateResponse;
+  request: EstimateRequest;
+  pricing: PricingConfig | null;
+}) {
+  const explanation = buildConfidenceExplanation(estimate, request, pricing);
+
+  return (
+    <article className="confidence-card">
+      <header>
+        <div>
+          <p className="eyebrow">Confidence explanation</p>
+          <h4>{estimate.confidence_level} confidence ({estimate.confidence_score}/100)</h4>
+        </div>
+        <span className={`confidence-badge ${estimate.confidence_level.toLowerCase()}`}>{estimate.confidence_level}</span>
+      </header>
+      <p>{explanation.summary}</p>
+      <div className="confidence-grid">
+        <div>
+          <h5>What supports this estimate</h5>
+          <ul>
+            {explanation.strengths.map((item) => (
+              <li key={item}>
+                <BadgeCheck size={15} />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <h5>Validate before sharing</h5>
+          <ul>
+            {explanation.watchItems.map((item) => (
+              <li key={item}>
+                <AlertTriangle size={15} />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function ChartPanel({ title, icon, children }: { title: string; icon: ReactNode; children: ReactNode }) {
   return (
     <article className="chart-panel">
@@ -1815,6 +1866,81 @@ function roundEstimatorInput(value: number) {
 
 function getComponentAssumptions(estimate: EstimateResponse, label: string) {
   return estimate.components.find((component) => component.label === label)?.assumptions ?? {};
+}
+
+function buildConfidenceExplanation(estimate: EstimateResponse, request: EstimateRequest, pricing: PricingConfig | null) {
+  const strengths: string[] = [];
+  const watchItems: string[] = [];
+  const warningCount = estimate.warnings.length;
+  const highestSeverity = estimate.warnings.find((warning) => warning.severity === "high")?.severity ??
+    estimate.warnings.find((warning) => warning.severity === "medium")?.severity ??
+    estimate.warnings.find((warning) => warning.severity === "low")?.severity;
+
+  if (request.dataset.total_data_size_gb > 0 && request.dataset.file_count > 0) {
+    strengths.push("Dataset size and file count are populated, so unit-cost metrics are grounded in actual volume inputs.");
+  }
+
+  if (pricing?.pricing_source?.mode === "live") {
+    strengths.push("Cloud storage pricing is using live provider list pricing where available.");
+  } else {
+    strengths.push("Pricing source and fallback assumptions are visible for review in the assumptions section.");
+  }
+
+  if (estimate.buffer_percentage > 0) {
+    strengths.push(`${estimate.buffer_percentage}% buffer is included to absorb planning uncertainty.`);
+  }
+
+  if (request.dataset.replication_factor > 1) {
+    strengths.push(`Storage redundancy is explicitly modelled at ${request.dataset.replication_factor}x copies.`);
+  }
+
+  if (request.cross_region_transfer.enabled) {
+    strengths.push("Cross-region DR transfer/access is explicitly included instead of hidden in storage assumptions.");
+  }
+
+  if (request.support_cost.support_cost_percentage > 0) {
+    strengths.push(`Support uplift is included at ${request.support_cost.support_cost_percentage}%.`);
+  }
+
+  if (request.support_cost.databricks_discount_percentage > 0 || request.support_cost.cloud_discount_percentage > 0) {
+    strengths.push("Discount inputs are separated between Databricks and cloud charges.");
+  }
+
+  const warningsForReview = estimate.warnings.slice(0, 3).map((warning) => `${titleCase(warning.severity)}: ${warning.message}`);
+  watchItems.push(...warningsForReview);
+
+  if (request.sql_compute.dbu_rate !== null || request.job_compute.dbu_rate !== null || request.ai_bi.dbu_rate !== null) {
+    watchItems.push("Manual DBU rates should be validated against the current Databricks/internal rate card.");
+  } else {
+    watchItems.push("DBU rates come from configured defaults and should still be validated before budget approval.");
+  }
+
+  if (request.support_cost.databricks_discount_percentage === 0 && request.support_cost.cloud_discount_percentage === 0) {
+    watchItems.push("Discounts are set to 0%, so final negotiated rates may reduce the actual cost.");
+  }
+
+  if (!request.cross_region_transfer.enabled) {
+    watchItems.push("Cross-region DR is disabled; enable it if replicated regional access or disaster recovery is in scope.");
+  }
+
+  if (watchItems.length === 0) {
+    watchItems.push("No major validation gaps detected, but final numbers still need FinOps/platform approval.");
+  }
+
+  const summary =
+    warningCount === 0
+      ? "This estimate has no active warnings, so the score is mainly limited by the fact that it is still a planning estimate."
+      : `This score reflects ${warningCount} active validation ${warningCount === 1 ? "item" : "items"}${highestSeverity ? `, with ${highestSeverity} severity being the highest current concern` : ""}.`;
+
+  return {
+    summary,
+    strengths: strengths.slice(0, 5),
+    watchItems: dedupeStrings(watchItems).slice(0, 5)
+  };
+}
+
+function dedupeStrings(values: string[]) {
+  return Array.from(new Set(values));
 }
 
 function formatUnitPrice(value: unknown, currency = "USD") {
