@@ -245,7 +245,9 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
         ["Storage status", str(_component_assumption(estimate, "Storage", "pricing_status"))],
         ["SQL DBU source", str(_component_assumption(estimate, "Databricks SQL compute", "dbu_rate_source"))],
         ["Batch DBU source", str(_component_assumption(estimate, "Batch ingestion compute", "dbu_rate_source"))],
+        ["Batch EC2 source", str(_component_assumption(estimate, "Batch ingestion compute", "instance_pricing_source"))],
         ["Streaming DBU source", str(_component_assumption(estimate, "Streaming ingestion compute", "dbu_rate_source"))],
+        ["Streaming EC2 source", str(_component_assumption(estimate, "Streaming ingestion compute", "instance_pricing_source"))],
     ]
     workload_rows = [
         ["Storage class", str(_component_assumption(estimate, "Storage", "storage_display_name"))],
@@ -256,8 +258,12 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
         ["SQL DBU rate", str(_component_assumption(estimate, "Databricks SQL compute", "dbu_rate"))],
         ["Queries/month", f"{request.sql_compute.queries_per_month:,}"],
         ["Batch", f"{request.job_compute.ingestion_frequency.value} / {request.job_compute.job_runs_per_month:,} runs"],
+        ["Batch sizing", f"{request.job_compute.worker_count} workers + {request.job_compute.driver_count} driver on {request.job_compute.worker_instance_type}" if request.job_compute.use_instance_sizing else "Simple DBU/hour"],
+        ["Batch compaction", f"{request.job_compute.compaction_runs_per_month:,} runs"],
         ["Streaming", f"{request.streaming_ingestion.source_type.value} / {request.streaming_ingestion.ingestion_product.value}"],
+        ["Streaming sizing", f"{request.streaming_ingestion.worker_count} workers + {request.streaming_ingestion.driver_count} driver on {request.streaming_ingestion.worker_instance_type}" if request.streaming_ingestion.use_instance_sizing else "Simple DBU/hour"],
         ["Streaming hours/month", str(_component_assumption(estimate, "Streaming ingestion compute", "monthly_streaming_hours"))],
+        ["Streaming transfer", f"{_component_assumption(estimate, 'Streaming ingestion compute', 'source_location')} / {_component_assumption(estimate, 'Streaming ingestion compute', 'source_transfer_price_per_gb')} per GB"],
     ]
     commercial_rows = [
         ["AI/BI enabled", "Yes" if request.ai_bi.enabled else "No"],
@@ -344,10 +350,22 @@ def _pricing_source_rows(export_request: ExportRequest) -> list[tuple[str, Any]]
         ("support_cost_method", _component_assumption(estimate, "Support cost uplift", "calculation_method")),
         ("sql_dbu_rate_source", _component_assumption(estimate, "Databricks SQL compute", "dbu_rate_source")),
         ("batch_dbu_rate_source", _component_assumption(estimate, "Batch ingestion compute", "dbu_rate_source")),
+        ("batch_use_instance_sizing", _component_assumption(estimate, "Batch ingestion compute", "use_instance_sizing")),
+        ("batch_cluster_dbu_per_hour", _component_assumption(estimate, "Batch ingestion compute", "cluster_dbu_per_hour")),
+        ("batch_cluster_ec2_cost_per_hour", _component_assumption(estimate, "Batch ingestion compute", "cluster_ec2_cost_per_hour")),
+        ("batch_instance_pricing_source", _component_assumption(estimate, "Batch ingestion compute", "instance_pricing_source")),
+        ("batch_instance_pricing_status", _component_assumption(estimate, "Batch ingestion compute", "instance_pricing_status")),
+        ("batch_compaction_cost", _component_assumption(estimate, "Batch ingestion compute", "monthly_compaction_cost")),
         ("streaming_dbu_rate_source", _component_assumption(estimate, "Streaming ingestion compute", "dbu_rate_source")),
         ("streaming_source_type", _component_assumption(estimate, "Streaming ingestion compute", "source_type")),
         ("streaming_ingestion_product", _component_assumption(estimate, "Streaming ingestion compute", "ingestion_product")),
         ("streaming_monthly_hours", _component_assumption(estimate, "Streaming ingestion compute", "monthly_streaming_hours")),
+        ("streaming_use_instance_sizing", _component_assumption(estimate, "Streaming ingestion compute", "use_instance_sizing")),
+        ("streaming_cluster_dbu_per_hour", _component_assumption(estimate, "Streaming ingestion compute", "cluster_dbu_per_hour")),
+        ("streaming_cluster_ec2_cost_per_hour", _component_assumption(estimate, "Streaming ingestion compute", "cluster_ec2_cost_per_hour")),
+        ("streaming_instance_pricing_source", _component_assumption(estimate, "Streaming ingestion compute", "instance_pricing_source")),
+        ("streaming_instance_pricing_status", _component_assumption(estimate, "Streaming ingestion compute", "instance_pricing_status")),
+        ("streaming_source_transfer_cost", _component_assumption(estimate, "Streaming ingestion compute", "monthly_source_transfer_cost")),
         ("ai_bi_dbu_rate_source", _component_assumption(estimate, "AI/BI optional layer", "dbu_rate_source")),
     ]
 

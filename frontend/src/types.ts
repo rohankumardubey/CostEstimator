@@ -3,10 +3,12 @@ export type WarehouseType = "serverless" | "pro" | "classic";
 export type UsagePattern = "rare" | "occasional" | "frequent" | "high";
 export type IngestionFrequency = "one-time" | "daily" | "weekly" | "monthly";
 export type RedundancyModel = "single_copy" | "backup_copy" | "custom";
-export type BatchComputeType = "classic_jobs" | "serverless_jobs" | "dlt_triggered";
-export type StreamingSourceType = "kafka" | "pulsar" | "kinesis" | "event_hubs" | "cdc_database" | "saas_connector" | "api_webhook" | "other";
+export type BatchComputeType = "classic_jobs" | "jobs_photon" | "serverless_jobs" | "dlt_triggered";
+export type StreamingSourceType = "kafka" | "pulsar" | "kinesis" | "event_hubs" | "cdc_database" | "saas_connector" | "object_store" | "api_webhook" | "on_prem_system" | "other";
 export type StreamingIngestionProduct = "structured_streaming" | "dlt_continuous" | "lakeflow_connect" | "zerobus_ingest";
 export type StreamingRuntimePattern = "always_on" | "business_hours" | "custom";
+export type SourceLocation = "same_az" | "same_region_cross_az" | "different_region" | "on_prem_internet";
+export type DltTier = "core" | "pro" | "advanced";
 
 export interface DatasetInput {
   team_name: string;
@@ -49,28 +51,49 @@ export interface JobComputeInput {
   batch_type: string;
   data_volume_per_run_gb: number;
   compute_type: BatchComputeType;
+  dlt_tier: DltTier;
+  use_instance_sizing: boolean;
+  worker_instance_type: string;
+  worker_count: number;
+  driver_instance_type: string;
+  driver_count: number;
+  photon_enabled: boolean;
+  include_ec2_cost: boolean;
   job_runs_per_month: number;
   average_job_runtime_minutes: number;
   job_cluster_size: string;
   custom_dbu_per_hour?: number | null;
   dbu_rate?: number | null;
   number_of_jobs: number;
+  compaction_runs_per_month: number;
+  average_compaction_runtime_minutes: number;
 }
 
 export interface StreamingIngestionInput {
   enabled: boolean;
   source_type: StreamingSourceType;
   ingestion_product: StreamingIngestionProduct;
+  source_location: SourceLocation;
+  trigger_interval: string;
   daily_data_gb: number;
   monthly_data_gb?: number | null;
   runtime_pattern: StreamingRuntimePattern;
   hours_per_day: number;
   days_per_month: number;
+  monthly_runtime_hours?: number | null;
   number_of_streams: number;
+  dlt_tier: DltTier;
+  use_instance_sizing: boolean;
+  worker_instance_type: string;
+  worker_count: number;
+  driver_instance_type: string;
+  driver_count: number;
   dbu_per_hour: number;
   dbu_rate?: number | null;
   include_ec2_cost: boolean;
   ec2_hourly_cost: number;
+  source_transfer_gb_per_month?: number | null;
+  source_transfer_price_per_gb_override?: number | null;
   free_tier_already_consumed: boolean;
   photon_enabled: boolean;
 }
@@ -179,6 +202,9 @@ export interface PricingConfig {
     cache_seconds: number;
     notes: string[];
   };
+  network?: {
+    source_transfer?: Partial<Record<SourceLocation, { display_name: string; price_per_gb: number }>>;
+  };
   cloud: Record<
     CloudProvider,
     {
@@ -208,6 +234,7 @@ export interface PricingConfig {
       sql?: Partial<Record<WarehouseType, number>>;
       jobs?: {
         classic?: number;
+        photon?: number;
         serverless?: number;
         default?: number;
       };
@@ -225,6 +252,21 @@ export interface PricingConfig {
       free_dbu_per_workspace_day?: number;
       zerobus_ingest_price_per_gb?: number;
     };
+    instance_types?: Record<
+      string,
+      {
+        display_name: string;
+        vcpu: number;
+        memory_gib: number;
+        jobs_dbu_per_hour: number;
+        photon_dbu_per_hour?: number | null;
+        ec2_price_per_hour: number;
+        pricing_source?: string;
+        pricing_status?: string;
+        pricing_region?: string;
+        pricing_note?: string;
+      }
+    >;
     sql_warehouses: Record<string, { display_name: string; dbu_per_hour: number }>;
     jobs: Record<string, { display_name: string; dbu_per_hour: number }>;
   };

@@ -136,12 +136,41 @@ def test_streaming_structured_streaming_formula() -> None:
         days_per_month=30,
         number_of_streams=1,
         dbu_per_hour=4,
+        use_instance_sizing=False,
+        source_location="same_az",
     )
 
     component = calculate_streaming_ingestion_cost(streaming, pricing())
 
     assert component.assumptions["monthly_streaming_hours"] == 720
     assert component.monthly_cost == 748.8
+
+
+def test_streaming_instance_sizing_matches_reference_cluster_formula() -> None:
+    streaming = StreamingIngestionInput(
+        enabled=True,
+        source_type="kafka",
+        ingestion_product="structured_streaming",
+        daily_data_gb=34.13,
+        monthly_data_gb=1024,
+        monthly_runtime_hours=730,
+        days_per_month=30,
+        number_of_streams=1,
+        worker_instance_type="m5.xlarge",
+        worker_count=2,
+        driver_instance_type="m5.xlarge",
+        driver_count=1,
+        use_instance_sizing=True,
+        include_ec2_cost=True,
+        source_location="same_az",
+    )
+
+    component = calculate_streaming_ingestion_cost(streaming, pricing())
+
+    assert component.assumptions["cluster_dbu_per_hour"] == 4.5
+    assert component.assumptions["cluster_ec2_cost_per_hour"] == 0.642
+    assert component.assumptions["monthly_streaming_hours"] == 730
+    assert component.monthly_cost == 1322.76
 
 
 def test_streaming_lakeflow_connect_can_apply_free_tier() -> None:
@@ -155,6 +184,7 @@ def test_streaming_lakeflow_connect_can_apply_free_tier() -> None:
         number_of_streams=1,
         dbu_per_hour=3,
         free_tier_already_consumed=False,
+        source_location="same_az",
     )
 
     component = calculate_streaming_ingestion_cost(streaming, pricing())
@@ -170,6 +200,7 @@ def test_streaming_zerobus_uses_gb_pricing() -> None:
         ingestion_product="zerobus_ingest",
         daily_data_gb=10,
         days_per_month=30,
+        source_location="same_az",
     )
 
     component = calculate_streaming_ingestion_cost(streaming, pricing())

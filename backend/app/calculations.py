@@ -23,6 +23,7 @@ from .pricing import (
     get_ai_bi_dbu_rate,
     get_cloud_storage_config,
     get_cross_region_transfer_config,
+    get_databricks_instance_config,
     get_dlt_dbu_rate,
     get_job_dbu_per_hour,
     get_job_dbu_rate,
@@ -30,6 +31,7 @@ from .pricing import (
     get_lakeflow_connect_free_dbu_per_day,
     get_sql_dbu_per_hour,
     get_sql_dbu_rate,
+    get_source_transfer_price_per_gb,
     get_zerobus_price_per_gb,
 )
 
@@ -221,10 +223,27 @@ def calculate_job_compute_cost(
     job_compute: JobComputeInput,
     pricing: dict[str, Any],
 ) -> CostComponent:
-    dbu_per_hour = get_job_dbu_per_hour(
-        pricing,
-        job_compute.job_cluster_size,
-        job_compute.custom_dbu_per_hour,
+    cluster_sizing = (
+        _calculate_cluster_sizing(
+            pricing,
+            worker_instance_type=job_compute.worker_instance_type,
+            worker_count=job_compute.worker_count,
+            driver_instance_type=job_compute.driver_instance_type,
+            driver_count=job_compute.driver_count,
+            photon_enabled=job_compute.photon_enabled,
+        )
+        if job_compute.use_instance_sizing
+        else {}
+    )
+    dbu_per_hour = float(
+        cluster_sizing.get(
+            "cluster_dbu_per_hour",
+            get_job_dbu_per_hour(
+                pricing,
+                job_compute.job_cluster_size,
+                job_compute.custom_dbu_per_hour,
+            ),
+        )
     )
     dbu_rate = float(
         job_compute.dbu_rate
@@ -237,7 +256,28 @@ def calculate_job_compute_cost(
         / 60
         * job_compute.number_of_jobs
     )
-    compute_cost = dbu_per_hour * dbu_rate * job_hours if job_compute.enabled else 0
+    dbu_compute_cost = dbu_per_hour * dbu_rate * job_hours if job_compute.enabled else 0
+    ec2_cost = (
+        float(cluster_sizing.get("cluster_ec2_cost_per_hour", 0)) * job_hours
+        if job_compute.enabled and job_compute.use_instance_sizing and job_compute.include_ec2_cost
+        else 0
+    )
+    compaction_hours = (
+        job_compute.compaction_runs_per_month
+        * job_compute.average_compaction_runtime_minutes
+        / 60
+    )
+    compaction_cost = (
+        dbu_per_hour * dbu_rate * compaction_hours
+        + (
+            float(cluster_sizing.get("cluster_ec2_cost_per_hour", 0)) * compaction_hours
+            if job_compute.use_instance_sizing and job_compute.include_ec2_cost
+            else 0
+        )
+        if job_compute.enabled
+        else 0
+    )
+    compute_cost = dbu_compute_cost + ec2_cost + compaction_cost
     is_one_time = job_compute.ingestion_frequency.value == "one-time"
     monthly_cost = 0 if is_one_time else compute_cost
     one_time_cost = compute_cost if is_one_time else 0
@@ -251,6 +291,14 @@ def calculate_job_compute_cost(
             "batch_type": job_compute.batch_type,
             "data_volume_per_run_gb": job_compute.data_volume_per_run_gb,
             "compute_type": job_compute.compute_type.value,
+            "dlt_tier": job_compute.dlt_tier.value,
+            "use_instance_sizing": job_compute.use_instance_sizing,
+            "worker_instance_type": job_compute.worker_instance_type,
+            "worker_count": job_compute.worker_count,
+            "driver_instance_type": job_compute.driver_instance_type,
+            "driver_count": job_compute.driver_count,
+            "photon_enabled": job_compute.photon_enabled,
+            "include_ec2_cost": job_compute.include_ec2_cost,
             "job_runs_per_month": job_compute.job_runs_per_month,
             "average_job_runtime_minutes": job_compute.average_job_runtime_minutes,
             "number_of_jobs": job_compute.number_of_jobs,
@@ -259,8 +307,15 @@ def calculate_job_compute_cost(
             "dbu_rate": dbu_rate,
             "dbu_rate_source": "user_input" if job_compute.dbu_rate is not None else f"configured_{job_compute.compute_type.value}_rate",
             "monthly_job_hours": round(job_hours, 4),
+            "monthly_dbu_compute_cost": _round_money(dbu_compute_cost),
+            "monthly_ec2_cost": _round_money(ec2_cost),
+            "compaction_runs_per_month": job_compute.compaction_runs_per_month,
+            "average_compaction_runtime_minutes": job_compute.average_compaction_runtime_minutes,
+            "monthly_compaction_hours": round(compaction_hours, 4),
+            "monthly_compaction_cost": _round_money(compaction_cost),
             "one_time_batch_cost": _round_money(one_time_cost),
             "recurring_monthly_batch_cost": _round_money(monthly_cost),
+            **cluster_sizing,
             "note": "One-time batch loads are shown separately and are not annualized as recurring monthly cost."
             if is_one_time
             else "Scheduled batch jobs are treated as recurring monthly Databricks compute.",
@@ -272,7 +327,9 @@ def _get_batch_dbu_rate(job_compute: JobComputeInput, pricing: dict[str, Any]) -
     if job_compute.compute_type.value == "serverless_jobs":
         return get_job_dbu_rate(pricing, "serverless")
     if job_compute.compute_type.value == "dlt_triggered":
-        return get_dlt_dbu_rate(pricing, "core")
+        return get_dlt_dbu_rate(pricing, job_compute.dlt_tier.value)
+    if job_compute.compute_type.value == "jobs_photon" or job_compute.photon_enabled:
+        return get_job_dbu_rate(pricing, "photon")
     return get_job_dbu_rate(pricing, "classic")
 
 
@@ -285,27 +342,61 @@ def calculate_streaming_ingestion_cost(
         if streaming.monthly_data_gb is not None
         else streaming.daily_data_gb * streaming.days_per_month
     )
+    runtime_hours_per_stream = (
+        streaming.monthly_runtime_hours
+        if streaming.monthly_runtime_hours is not None
+        else streaming.hours_per_day * streaming.days_per_month
+    )
     monthly_stream_hours = (
-        streaming.hours_per_day
-        * streaming.days_per_month
-        * streaming.number_of_streams
+        runtime_hours_per_stream * streaming.number_of_streams
         if streaming.enabled
         else 0
     )
     product = streaming.ingestion_product
+    cluster_sizing = (
+        _calculate_cluster_sizing(
+            pricing,
+            worker_instance_type=streaming.worker_instance_type,
+            worker_count=streaming.worker_count,
+            driver_instance_type=streaming.driver_instance_type,
+            driver_count=streaming.driver_count,
+            photon_enabled=streaming.photon_enabled,
+        )
+        if streaming.use_instance_sizing and product in {
+            StreamingIngestionProduct.structured_streaming,
+            StreamingIngestionProduct.dlt_continuous,
+        }
+        else {}
+    )
+    effective_dbu_per_hour = float(cluster_sizing.get("cluster_dbu_per_hour", streaming.dbu_per_hour))
     dbu_rate = float(
         streaming.dbu_rate
         if streaming.dbu_rate is not None
         else _get_streaming_dbu_rate(streaming, pricing)
     )
-    billable_dbus = streaming.dbu_per_hour * monthly_stream_hours
+    billable_dbus = effective_dbu_per_hour * monthly_stream_hours
     free_dbus = 0.0
     ec2_cost = 0.0
     unit_price_per_gb = 0.0
+    source_transfer_gb = (
+        streaming.source_transfer_gb_per_month
+        if streaming.source_transfer_gb_per_month is not None
+        else monthly_data_gb
+    )
+    source_transfer_price_per_gb = float(
+        streaming.source_transfer_price_per_gb_override
+        if streaming.source_transfer_price_per_gb_override is not None
+        else get_source_transfer_price_per_gb(pricing, streaming.source_location.value)
+    )
+    source_transfer_cost = (
+        source_transfer_gb * source_transfer_price_per_gb
+        if streaming.enabled
+        else 0
+    )
 
     if product == StreamingIngestionProduct.zerobus_ingest:
         unit_price_per_gb = get_zerobus_price_per_gb(pricing)
-        monthly_cost = monthly_data_gb * unit_price_per_gb if streaming.enabled else 0
+        monthly_cost = (monthly_data_gb * unit_price_per_gb + source_transfer_cost) if streaming.enabled else 0
         billable_dbus = 0
     else:
         if product == StreamingIngestionProduct.lakeflow_connect and not streaming.free_tier_already_consumed:
@@ -313,11 +404,14 @@ def calculate_streaming_ingestion_cost(
         chargeable_dbus = max(0, billable_dbus - free_dbus)
         dbu_cost = chargeable_dbus * dbu_rate
         ec2_cost = (
-            streaming.ec2_hourly_cost * monthly_stream_hours
+            (
+                float(cluster_sizing.get("cluster_ec2_cost_per_hour", streaming.ec2_hourly_cost))
+                * monthly_stream_hours
+            )
             if streaming.enabled and streaming.include_ec2_cost
             else 0
         )
-        monthly_cost = dbu_cost + ec2_cost if streaming.enabled else 0
+        monthly_cost = dbu_cost + ec2_cost + source_transfer_cost if streaming.enabled else 0
 
     return CostComponent(
         label="Streaming ingestion compute",
@@ -326,23 +420,36 @@ def calculate_streaming_ingestion_cost(
             "enabled": streaming.enabled,
             "source_type": streaming.source_type.value,
             "ingestion_product": product.value,
+            "source_location": streaming.source_location.value,
+            "trigger_interval": streaming.trigger_interval,
             "daily_data_gb": streaming.daily_data_gb,
             "monthly_data_gb": round(monthly_data_gb, 4) if streaming.enabled else 0,
             "runtime_pattern": streaming.runtime_pattern.value,
             "hours_per_day": streaming.hours_per_day if streaming.enabled else 0,
             "days_per_month": streaming.days_per_month if streaming.enabled else 0,
+            "monthly_runtime_hours": runtime_hours_per_stream if streaming.enabled else 0,
             "number_of_streams": streaming.number_of_streams if streaming.enabled else 0,
+            "dlt_tier": streaming.dlt_tier.value,
+            "use_instance_sizing": streaming.use_instance_sizing,
+            "worker_instance_type": streaming.worker_instance_type,
+            "worker_count": streaming.worker_count,
+            "driver_instance_type": streaming.driver_instance_type,
+            "driver_count": streaming.driver_count,
             "monthly_streaming_hours": round(monthly_stream_hours, 4),
-            "dbu_per_hour": streaming.dbu_per_hour,
+            "dbu_per_hour": effective_dbu_per_hour,
             "dbu_rate": dbu_rate,
             "dbu_rate_source": "user_input" if streaming.dbu_rate is not None else f"configured_{product.value}_rate",
             "billable_dbus_before_free_tier": round(billable_dbus, 4),
             "free_dbus_applied": round(free_dbus, 4),
             "include_ec2_cost": streaming.include_ec2_cost,
-            "ec2_hourly_cost": streaming.ec2_hourly_cost,
+            "ec2_hourly_cost": float(cluster_sizing.get("cluster_ec2_cost_per_hour", streaming.ec2_hourly_cost)),
             "monthly_ec2_cost": _round_money(ec2_cost),
+            "source_transfer_gb_per_month": round(source_transfer_gb, 4) if streaming.enabled else 0,
+            "source_transfer_price_per_gb": source_transfer_price_per_gb,
+            "monthly_source_transfer_cost": _round_money(source_transfer_cost),
             "unit_price_per_gb": unit_price_per_gb,
             "photon_enabled": streaming.photon_enabled,
+            **cluster_sizing,
             "note": _streaming_note(product),
         },
     )
@@ -351,12 +458,54 @@ def calculate_streaming_ingestion_cost(
 def _get_streaming_dbu_rate(streaming: StreamingIngestionInput, pricing: dict[str, Any]) -> float:
     product = streaming.ingestion_product
     if product == StreamingIngestionProduct.dlt_continuous:
-        return get_dlt_dbu_rate(pricing, "core")
+        return get_dlt_dbu_rate(pricing, streaming.dlt_tier.value)
     if product == StreamingIngestionProduct.lakeflow_connect:
         return get_lakeflow_connect_dbu_rate(pricing)
     if product == StreamingIngestionProduct.zerobus_ingest:
         return 0
+    if streaming.photon_enabled:
+        return get_job_dbu_rate(pricing, "photon")
     return get_job_dbu_rate(pricing, "classic")
+
+
+def _calculate_cluster_sizing(
+    pricing: dict[str, Any],
+    *,
+    worker_instance_type: str,
+    worker_count: int,
+    driver_instance_type: str,
+    driver_count: int,
+    photon_enabled: bool,
+) -> dict[str, Any]:
+    worker = get_databricks_instance_config(pricing, worker_instance_type)
+    driver = get_databricks_instance_config(pricing, driver_instance_type)
+
+    worker_dbu_per_node = _instance_dbu_per_hour(worker, photon_enabled)
+    driver_dbu_per_node = _instance_dbu_per_hour(driver, photon_enabled)
+    worker_ec2_per_node = float(worker.get("ec2_price_per_hour", 0))
+    driver_ec2_per_node = float(driver.get("ec2_price_per_hour", 0))
+    cluster_dbu = worker_dbu_per_node * worker_count + driver_dbu_per_node * driver_count
+    cluster_ec2 = worker_ec2_per_node * worker_count + driver_ec2_per_node * driver_count
+
+    return {
+        "worker_dbu_per_node": worker_dbu_per_node,
+        "driver_dbu_per_node": driver_dbu_per_node,
+        "worker_ec2_price_per_hour": worker_ec2_per_node,
+        "driver_ec2_price_per_hour": driver_ec2_per_node,
+        "cluster_dbu_per_hour": round(cluster_dbu, 4),
+        "cluster_ec2_cost_per_hour": round(cluster_ec2, 4),
+        "total_cluster_nodes": worker_count + driver_count,
+        "instance_pricing_source": worker.get("pricing_source", "config_fallback"),
+        "instance_pricing_status": worker.get("pricing_status", "fallback"),
+        "instance_pricing_region": worker.get("pricing_region", ""),
+        "instance_pricing_note": worker.get("pricing_note", ""),
+    }
+
+
+def _instance_dbu_per_hour(instance: dict[str, Any], photon_enabled: bool) -> float:
+    if photon_enabled and instance.get("photon_dbu_per_hour") is not None:
+        return float(instance.get("photon_dbu_per_hour", 0))
+    return float(instance.get("jobs_dbu_per_hour", 0))
 
 
 def _streaming_note(product: StreamingIngestionProduct) -> str:

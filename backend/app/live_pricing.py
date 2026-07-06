@@ -15,6 +15,7 @@ import certifi
 
 
 AWS_S3_PRICE_URL = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/{region}/index.json"
+AWS_EC2_PRICE_URL = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/{region}/index.json"
 AZURE_RETAIL_PRICE_URL = "https://prices.azure.com/api/retail/prices"
 GCP_CATALOG_URL = "https://cloudbilling.googleapis.com/v1/services"
 
@@ -66,11 +67,17 @@ def load_live_pricing_config(
         bool(selected_region)
         and not _selected_region_has_live_storage(config, *selected_region)
     )
+    ec2_live_enabled = _live_ec2_pricing_enabled()
+    needs_compute = (
+        ec2_live_enabled
+        and bool(selected_region)
+        and not _selected_region_has_live_compute(config, *selected_region)
+    )
     needs_transfer = (
         bool(selected_transfer_route)
         and not _selected_route_has_live_transfer(config, *selected_transfer_route)
     )
-    if mode == "live" and (needs_storage or needs_transfer):
+    if mode == "live" and (needs_storage or needs_compute or needs_transfer):
         config = _build_live_config(
             base_config,
             ttl_seconds,
@@ -136,6 +143,10 @@ def clear_live_pricing_cache() -> None:
     _CACHE_EXPIRES_AT = 0
 
 
+def _live_ec2_pricing_enabled() -> bool:
+    return os.getenv("LIVE_EC2_PRICING_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+
+
 def _mark_all_storage_as_config_fallback(config: dict[str, Any]) -> None:
     for cloud_key, cloud in config.get("cloud", {}).items():
         for region_key, region in cloud.get("regions", {}).items():
@@ -147,11 +158,36 @@ def _mark_all_storage_as_config_fallback(config: dict[str, Any]) -> None:
                     "pricing_note",
                     f"Fallback value from config for {cloud_key}/{region_key}/{storage_key}.",
                 )
+    _mark_databricks_instances_as_config_fallback(config)
+
+
+def _mark_databricks_instances_as_config_fallback(config: dict[str, Any]) -> None:
+    for instance_key, instance in config.get("databricks", {}).get("instance_types", {}).items():
+        instance.setdefault("pricing_source", "config/pricing.yaml")
+        instance.setdefault("pricing_status", "fallback")
+        instance.setdefault("pricing_source_url", "")
+        instance.setdefault(
+            "pricing_note",
+            f"Bundled EC2 fallback value for {instance_key}; set LIVE_EC2_PRICING_ENABLED=true to refresh from AWS EC2 live pricing.",
+        )
 
 
 def _selected_region_has_live_storage(config: dict[str, Any], cloud_provider: str, region_key: str) -> bool:
     region = config.get("cloud", {}).get(cloud_provider, {}).get("regions", {}).get(region_key, {})
     return any(storage.get("pricing_status") == "live" for storage in region.get("storage", {}).values())
+
+
+def _selected_region_has_live_compute(config: dict[str, Any], cloud_provider: str, region_key: str) -> bool:
+    if cloud_provider != "aws":
+        return True
+    instances = config.get("databricks", {}).get("instance_types", {})
+    if not instances:
+        return True
+    return all(
+        instance.get("pricing_status") == "live"
+        and instance.get("pricing_region") == region_key
+        for instance in instances.values()
+    )
 
 
 def _selected_route_has_live_transfer(
@@ -182,12 +218,72 @@ def _apply_selected_storage_prices(
 ) -> None:
     if cloud_provider == "aws":
         _apply_aws_storage_prices(config, timeout, notes, region_key)
+        if _live_ec2_pricing_enabled():
+            _apply_aws_ec2_prices(config, timeout, notes, region_key)
+        else:
+            notes.append(
+                "AWS EC2 live pricing is disabled for interactive estimates; using bundled EC2 fallback values. "
+                "Set LIVE_EC2_PRICING_ENABLED=true for a live EC2 refresh."
+            )
     elif cloud_provider == "azure":
         _apply_azure_storage_prices(config, timeout, notes, region_key)
     elif cloud_provider == "gcp":
         _apply_gcp_storage_prices(config, timeout, notes, region_key)
     else:
         notes.append(f"Live pricing is not supported for cloud provider '{cloud_provider}'.")
+
+
+def _apply_aws_ec2_prices(
+    config: dict[str, Any],
+    timeout: float,
+    notes: list[str],
+    region_key: str,
+) -> None:
+    instances = config.get("databricks", {}).get("instance_types", {})
+    if not instances:
+        return
+
+    try:
+        offer = _fetch_aws_json(AWS_EC2_PRICE_URL.format(region=region_key), timeout)
+    except Exception as exc:
+        notes.append(f"AWS EC2 live pricing failed for {region_key}: {exc}")
+        return
+
+    updated = 0
+    for instance_key, instance in instances.items():
+        price = _extract_aws_ec2_instance_price(offer, instance_key)
+        if price is None:
+            notes.append(f"AWS EC2 live price not found for {region_key}/{instance_key}; using bundled fallback.")
+            continue
+        instance["ec2_price_per_hour"] = price
+        instance["pricing_source"] = "aws_ec2_price_list_api"
+        instance["pricing_status"] = "live"
+        instance["pricing_region"] = region_key
+        instance["pricing_source_url"] = AWS_EC2_PRICE_URL.format(region=region_key)
+        instance["pricing_note"] = "AWS public EC2 Price List API for Linux on-demand, shared tenancy, no pre-installed software."
+        updated += 1
+
+    if updated:
+        notes.append(f"AWS EC2 live pricing refreshed for {updated} configured Databricks instance type(s) in {region_key}.")
+
+
+def _extract_aws_ec2_instance_price(offer: dict[str, Any], instance_type: str) -> float | None:
+    for sku, product in offer.get("products", {}).items():
+        attributes = product.get("attributes", {})
+        if attributes.get("instanceType") != instance_type:
+            continue
+        if attributes.get("operatingSystem") != "Linux":
+            continue
+        if attributes.get("tenancy") != "Shared":
+            continue
+        if attributes.get("preInstalledSw") not in {"NA", "No License required"}:
+            continue
+        if attributes.get("capacitystatus", "Used") != "Used":
+            continue
+        price = _first_price_dimension(offer, sku, "Hrs")
+        if price is not None:
+            return price
+    return None
 
 
 def _apply_aws_storage_prices(

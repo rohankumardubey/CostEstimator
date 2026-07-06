@@ -141,6 +141,21 @@ def get_job_dbu_rate(pricing: dict[str, Any], workload_type: str = "classic") ->
     return float(job_rates.get(workload_type, job_rates.get("classic", databricks.get("default_dbu_rate", 0))))
 
 
+def get_databricks_instance_config(pricing: dict[str, Any], instance_type: str) -> dict[str, Any]:
+    try:
+        return pricing["databricks"]["instance_types"][instance_type]
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Databricks instance type '{instance_type}' is not configured.",
+        ) from exc
+
+
+def get_source_transfer_price_per_gb(pricing: dict[str, Any], source_location: str) -> float:
+    transfer = pricing.get("network", {}).get("source_transfer", {})
+    return float(transfer.get(source_location, {}).get("price_per_gb", 0))
+
+
 def get_dlt_dbu_rate(pricing: dict[str, Any], workload_type: str = "core") -> float:
     databricks = pricing.get("databricks", {})
     dlt_rates = databricks.get("dbu_rates", {}).get("dlt", {})

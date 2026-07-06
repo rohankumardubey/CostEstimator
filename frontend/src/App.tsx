@@ -111,32 +111,53 @@ const defaultSql: SQLComputeInput = {
 
 const defaultJob: JobComputeInput = {
   enabled: false,
-  ingestion_frequency: "monthly",
+  ingestion_frequency: "one-time",
   batch_type: "one_time_archive_load",
   data_volume_per_run_gb: 0,
   compute_type: "classic_jobs",
+  dlt_tier: "core",
+  use_instance_sizing: false,
+  worker_instance_type: "m5.xlarge",
+  worker_count: 2,
+  driver_instance_type: "m5.xlarge",
+  driver_count: 1,
+  photon_enabled: false,
+  include_ec2_cost: false,
   job_runs_per_month: 0,
   average_job_runtime_minutes: 0,
   job_cluster_size: "small",
   custom_dbu_per_hour: null,
   dbu_rate: null,
-  number_of_jobs: 0
+  number_of_jobs: 0,
+  compaction_runs_per_month: 0,
+  average_compaction_runtime_minutes: 0
 };
 
 const defaultStreamingIngestion: StreamingIngestionInput = {
   enabled: false,
   source_type: "kafka",
   ingestion_product: "structured_streaming",
+  source_location: "same_region_cross_az",
+  trigger_interval: "continuous",
   daily_data_gb: 0,
   monthly_data_gb: null,
   runtime_pattern: "always_on",
   hours_per_day: 24,
   days_per_month: 30,
+  monthly_runtime_hours: 730,
   number_of_streams: 1,
-  dbu_per_hour: 4,
+  dlt_tier: "core",
+  use_instance_sizing: true,
+  worker_instance_type: "m5.xlarge",
+  worker_count: 2,
+  driver_instance_type: "m5.xlarge",
+  driver_count: 1,
+  dbu_per_hour: 4.5,
   dbu_rate: null,
-  include_ec2_cost: false,
+  include_ec2_cost: true,
   ec2_hourly_cost: 0,
+  source_transfer_gb_per_month: null,
+  source_transfer_price_per_gb_override: null,
   free_tier_already_consumed: true,
   photon_enabled: false
 };
@@ -201,7 +222,9 @@ function App() {
   const [storage, setStorage] = useState<StorageInput>(defaultStorage);
   const [sqlCompute, setSqlCompute] = useState<SQLComputeInput>(defaultSql);
   const [jobCompute, setJobCompute] = useState<JobComputeInput>(defaultJob);
+  const [batchDataVolumeManuallyEdited, setBatchDataVolumeManuallyEdited] = useState(false);
   const [streamingIngestion, setStreamingIngestion] = useState<StreamingIngestionInput>(defaultStreamingIngestion);
+  const [streamingNetworkPriceManuallyEdited, setStreamingNetworkPriceManuallyEdited] = useState(false);
   const [aiBi, setAiBi] = useState<AIBIInput>(defaultAiBi);
   const [crossRegionTransfer, setCrossRegionTransfer] = useState<CrossRegionTransferInput>(defaultCrossRegionTransfer);
   const [supportCost, setSupportCost] = useState<SupportCostInput>(defaultSupportCost);
@@ -304,6 +327,25 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (jobCompute.batch_type !== "one_time_archive_load" || batchDataVolumeManuallyEdited) {
+      return;
+    }
+    const datasetVolume = roundEstimatorInput(dataset.total_data_size_gb);
+    if (jobCompute.data_volume_per_run_gb === datasetVolume) {
+      return;
+    }
+    setJobCompute((current) => {
+      if (current.batch_type !== "one_time_archive_load") {
+        return current;
+      }
+      return {
+        ...current,
+        data_volume_per_run_gb: datasetVolume
+      };
+    });
+  }, [batchDataVolumeManuallyEdited, dataset.total_data_size_gb, jobCompute.batch_type, jobCompute.data_volume_per_run_gb]);
+
   const requestPayload = useMemo<EstimateRequest>(
     () => ({
       scenario_key: selectedScenario,
@@ -356,7 +398,9 @@ function App() {
       storage_class: scenario.storage_class_by_cloud[dataset.cloud_provider] ?? current.storage_class
     }));
     setSqlCompute((current) => ({ ...current, ...scenario.sql }));
+    setBatchDataVolumeManuallyEdited(false);
     setJobCompute((current) => ({ ...current, ...scenario.jobs }));
+    setStreamingNetworkPriceManuallyEdited(false);
     setStreamingIngestion((current) => ({ ...current, ...(scenario.streaming_ingestion ?? {}) }));
     setAiBi((current) => ({ ...defaultAiBi, ...current, ...scenario.ai_bi }));
   }
@@ -454,7 +498,9 @@ function App() {
     setDataset(nextRequest.dataset);
     setStorage(nextRequest.storage);
     setSqlCompute(nextRequest.sql_compute);
+    setBatchDataVolumeManuallyEdited(true);
     setJobCompute(nextRequest.job_compute);
+    setStreamingNetworkPriceManuallyEdited(Boolean(nextRequest.streaming_ingestion?.source_transfer_price_per_gb_override));
     setStreamingIngestion(nextRequest.streaming_ingestion ?? defaultStreamingIngestion);
     setAiBi(nextRequest.ai_bi);
     setCrossRegionTransfer(nextRequest.cross_region_transfer ?? defaultCrossRegionTransfer);
@@ -481,7 +527,9 @@ function App() {
         defaultStorage.storage_class
     });
     setSqlCompute(defaultSql);
+    setBatchDataVolumeManuallyEdited(false);
     setJobCompute(defaultJob);
+    setStreamingNetworkPriceManuallyEdited(false);
     setStreamingIngestion(defaultStreamingIngestion);
     setAiBi(defaultAiBi);
     setCrossRegionTransfer(defaultCrossRegionTransfer);
@@ -996,10 +1044,11 @@ function App() {
                   disabled={!crossRegionTransfer.enabled}
                 />
                 <NumberField
-                  label="Transfer price/GB override"
+                  label="Network transfer price/GB"
                   value={crossRegionTransfer.transfer_price_per_gb_override ?? 0}
                   onChange={(value) => setCrossRegionTransfer({ ...crossRegionTransfer, transfer_price_per_gb_override: value > 0 ? value : null })}
                   disabled={!crossRegionTransfer.enabled}
+                  hint="Example: 0 for no override, 0.01 same-region cross-AZ, 0.02 cross-region estimate."
                 />
               </div>
               <div className="enterprise-note-card compact">
@@ -1084,7 +1133,18 @@ function App() {
               <SelectField
                 label="Batch type"
                 value={jobCompute.batch_type}
-                onChange={(value) => setJobCompute({ ...jobCompute, batch_type: value })}
+                onChange={(value) => {
+                  const isOneTimeArchiveLoad = value === "one_time_archive_load";
+                  setBatchDataVolumeManuallyEdited(false);
+                  setJobCompute({
+                    ...jobCompute,
+                    batch_type: value,
+                    ingestion_frequency: isOneTimeArchiveLoad ? "one-time" : jobCompute.ingestion_frequency,
+                    data_volume_per_run_gb: isOneTimeArchiveLoad
+                      ? roundEstimatorInput(dataset.total_data_size_gb)
+                      : jobCompute.data_volume_per_run_gb
+                  });
+                }}
                 options={[
                   { value: "one_time_archive_load", label: "One-time archive load" },
                   { value: "scheduled_batch", label: "Scheduled batch" },
@@ -1103,7 +1163,10 @@ function App() {
               <NumberField
                 label="Data volume/run GB"
                 value={jobCompute.data_volume_per_run_gb}
-                onChange={(value) => setJobCompute({ ...jobCompute, data_volume_per_run_gb: value })}
+                onChange={(value) => {
+                  setBatchDataVolumeManuallyEdited(true);
+                  setJobCompute({ ...jobCompute, data_volume_per_run_gb: value });
+                }}
                 disabled={!jobCompute.enabled}
               />
               <SelectField
@@ -1112,11 +1175,55 @@ function App() {
                 onChange={(value) => setJobCompute({ ...jobCompute, compute_type: value as JobComputeInput["compute_type"] })}
                 options={[
                   { value: "classic_jobs", label: "Classic Jobs" },
+                  { value: "jobs_photon", label: "Classic Jobs + Photon" },
                   { value: "serverless_jobs", label: "Serverless Jobs" },
                   { value: "dlt_triggered", label: "DLT triggered" }
                 ]}
                 disabled={!jobCompute.enabled}
               />
+              {jobCompute.compute_type === "dlt_triggered" ? (
+                <SelectField
+                  label="DLT tier"
+                  value={jobCompute.dlt_tier}
+                  onChange={(value) => setJobCompute({ ...jobCompute, dlt_tier: value as JobComputeInput["dlt_tier"] })}
+                  options={[
+                    { value: "core", label: "Core" },
+                    { value: "pro", label: "Pro" },
+                    { value: "advanced", label: "Advanced" }
+                  ]}
+                  disabled={!jobCompute.enabled}
+                />
+              ) : null}
+              <SelectField
+                label="Batch sizing mode"
+                value={jobCompute.use_instance_sizing ? "instance" : "simple"}
+                onChange={(value) => setJobCompute({ ...jobCompute, use_instance_sizing: value === "instance", include_ec2_cost: value === "instance" ? jobCompute.include_ec2_cost : false })}
+                options={[
+                  { value: "simple", label: "Simple DBU/hour" },
+                  { value: "instance", label: "Instance-based sizing" }
+                ]}
+                disabled={!jobCompute.enabled || jobCompute.compute_type === "serverless_jobs"}
+              />
+              {jobCompute.use_instance_sizing && jobCompute.compute_type !== "serverless_jobs" ? (
+                <>
+                  <SelectField
+                    label="Worker instance"
+                    value={jobCompute.worker_instance_type}
+                    onChange={(value) => setJobCompute({ ...jobCompute, worker_instance_type: value })}
+                    options={getInstanceOptions(pricing)}
+                    disabled={!jobCompute.enabled}
+                  />
+                  <NumberField label="Worker count" value={jobCompute.worker_count} onChange={(value) => setJobCompute({ ...jobCompute, worker_count: value })} disabled={!jobCompute.enabled} />
+                  <SelectField
+                    label="Driver instance"
+                    value={jobCompute.driver_instance_type}
+                    onChange={(value) => setJobCompute({ ...jobCompute, driver_instance_type: value })}
+                    options={getInstanceOptions(pricing)}
+                    disabled={!jobCompute.enabled}
+                  />
+                  <NumberField label="Driver count" value={jobCompute.driver_count} onChange={(value) => setJobCompute({ ...jobCompute, driver_count: value })} disabled={!jobCompute.enabled} />
+                </>
+              ) : null}
               <NumberField label="Runs/month" value={jobCompute.job_runs_per_month} onChange={(value) => setJobCompute({ ...jobCompute, job_runs_per_month: value })} disabled={!jobCompute.enabled} />
               <NumberField
                 label="Avg runtime minutes"
@@ -1142,9 +1249,33 @@ function App() {
                   disabled={!jobCompute.enabled}
                 />
               ) : null}
-              <NumberField label="Batch DBU rate" value={jobCompute.dbu_rate ?? getDefaultBatchDbuRate(pricing, jobCompute.compute_type)} onChange={(value) => setJobCompute({ ...jobCompute, dbu_rate: value })} disabled={!jobCompute.enabled} />
+              <NumberField label="Batch DBU rate" value={jobCompute.dbu_rate ?? getDefaultBatchDbuRate(pricing, jobCompute.compute_type, jobCompute.dlt_tier)} onChange={(value) => setJobCompute({ ...jobCompute, dbu_rate: value })} disabled={!jobCompute.enabled} />
               <NumberField label="Pipelines/jobs" value={jobCompute.number_of_jobs} onChange={(value) => setJobCompute({ ...jobCompute, number_of_jobs: value })} disabled={!jobCompute.enabled} />
+              <NumberField label="OPTIMIZE / compaction runs" value={jobCompute.compaction_runs_per_month} onChange={(value) => setJobCompute({ ...jobCompute, compaction_runs_per_month: value })} disabled={!jobCompute.enabled} />
+              <NumberField label="Avg compaction runtime minutes" value={jobCompute.average_compaction_runtime_minutes} onChange={(value) => setJobCompute({ ...jobCompute, average_compaction_runtime_minutes: value })} disabled={!jobCompute.enabled || jobCompute.compaction_runs_per_month === 0} />
             </div>
+            {jobCompute.use_instance_sizing && jobCompute.compute_type !== "serverless_jobs" ? (
+              <div className="streaming-toggles">
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    checked={jobCompute.include_ec2_cost}
+                    onChange={(event) => setJobCompute({ ...jobCompute, include_ec2_cost: event.target.checked })}
+                    disabled={!jobCompute.enabled}
+                  />
+                  <span>Include EC2 cost from selected driver/workers</span>
+                </label>
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    checked={jobCompute.photon_enabled || jobCompute.compute_type === "jobs_photon"}
+                    onChange={(event) => setJobCompute({ ...jobCompute, photon_enabled: event.target.checked, compute_type: event.target.checked ? "jobs_photon" : "classic_jobs" })}
+                    disabled={!jobCompute.enabled || jobCompute.compute_type === "dlt_triggered"}
+                  />
+                  <span>Use Photon DBU mapping where supported</span>
+                </label>
+              </div>
+            ) : null}
             <div className="enterprise-note-card compact">
               <Database size={18} />
               <div>
@@ -1190,6 +1321,8 @@ function App() {
                     ingestion_product:
                       nextSource === "api_webhook"
                         ? "zerobus_ingest"
+                        : nextSource === "object_store"
+                          ? "structured_streaming"
                         : nextSource === "saas_connector" || nextSource === "cdc_database"
                           ? "lakeflow_connect"
                           : streamingIngestion.ingestion_product === "zerobus_ingest"
@@ -1204,15 +1337,25 @@ function App() {
                   { value: "event_hubs", label: "Event Hubs" },
                   { value: "cdc_database", label: "CDC database" },
                   { value: "saas_connector", label: "SaaS connector" },
+                  { value: "object_store", label: "Object store / Auto Loader" },
                   { value: "api_webhook", label: "API / webhook" },
+                  { value: "on_prem_system", label: "On-premises system" },
                   { value: "other", label: "Other" }
                 ]}
                 disabled={!streamingIngestion.enabled}
               />
               <SelectField
-                label="Ingestion product"
+                label="Streaming compute type"
                 value={streamingIngestion.ingestion_product}
-                onChange={(value) => setStreamingIngestion({ ...streamingIngestion, ingestion_product: value as StreamingIngestionInput["ingestion_product"] })}
+                onChange={(value) => {
+                  const nextProduct = value as StreamingIngestionInput["ingestion_product"];
+                  setStreamingIngestion({
+                    ...streamingIngestion,
+                    ingestion_product: nextProduct,
+                    use_instance_sizing: nextProduct === "structured_streaming" || nextProduct === "dlt_continuous",
+                    include_ec2_cost: nextProduct === "structured_streaming" ? streamingIngestion.include_ec2_cost : false
+                  });
+                }}
                 options={[
                   { value: "structured_streaming", label: "Spark Structured Streaming" },
                   { value: "dlt_continuous", label: "DLT continuous" },
@@ -1221,6 +1364,49 @@ function App() {
                 ]}
                 disabled={!streamingIngestion.enabled}
               />
+              <SelectField
+                label="Source location"
+                value={streamingIngestion.source_location}
+                onChange={(value) => {
+                  setStreamingNetworkPriceManuallyEdited(false);
+                  setStreamingIngestion({
+                    ...streamingIngestion,
+                    source_location: value as StreamingIngestionInput["source_location"],
+                    source_transfer_price_per_gb_override: null
+                  });
+                }}
+                options={[
+                  { value: "same_az", label: "Same AZ" },
+                  { value: "same_region_cross_az", label: "Same region, cross-AZ" },
+                  { value: "different_region", label: "Different region" },
+                  { value: "on_prem_internet", label: "On-prem / internet" }
+                ]}
+                disabled={!streamingIngestion.enabled}
+              />
+              <SelectField
+                label="Trigger interval"
+                value={streamingIngestion.trigger_interval}
+                onChange={(value) => setStreamingIngestion({ ...streamingIngestion, trigger_interval: value })}
+                options={[
+                  { value: "continuous", label: "Continuous" },
+                  { value: "processing_time", label: "processingTime" },
+                  { value: "available_now", label: "availableNow" }
+                ]}
+                disabled={!streamingIngestion.enabled}
+              />
+              {streamingIngestion.ingestion_product === "dlt_continuous" ? (
+                <SelectField
+                  label="DLT tier"
+                  value={streamingIngestion.dlt_tier}
+                  onChange={(value) => setStreamingIngestion({ ...streamingIngestion, dlt_tier: value as StreamingIngestionInput["dlt_tier"] })}
+                  options={[
+                    { value: "core", label: "Core" },
+                    { value: "pro", label: "Pro" },
+                    { value: "advanced", label: "Advanced" }
+                  ]}
+                  disabled={!streamingIngestion.enabled}
+                />
+              ) : null}
               <NumberField
                 label="Daily data ingested GB"
                 value={streamingIngestion.daily_data_gb}
@@ -1245,7 +1431,8 @@ function App() {
                   setStreamingIngestion({
                     ...streamingIngestion,
                     runtime_pattern: pattern,
-                    hours_per_day: pattern === "always_on" ? 24 : pattern === "business_hours" ? 10 : streamingIngestion.hours_per_day
+                    hours_per_day: pattern === "always_on" ? 24 : pattern === "business_hours" ? 10 : streamingIngestion.hours_per_day,
+                    monthly_runtime_hours: pattern === "always_on" ? 730 : pattern === "business_hours" ? 220 : streamingIngestion.monthly_runtime_hours
                   });
                 }}
                 options={[
@@ -1261,16 +1448,77 @@ function App() {
                 days_per_month: value,
                 monthly_data_gb: roundEstimatorInput(streamingIngestion.daily_data_gb * value)
               })} disabled={!streamingIngestion.enabled} />
+              <NumberField
+                label="Runtime hours/month"
+                value={streamingIngestion.monthly_runtime_hours ?? streamingIngestion.hours_per_day * streamingIngestion.days_per_month}
+                onChange={(value) => setStreamingIngestion({ ...streamingIngestion, monthly_runtime_hours: value })}
+                disabled={!streamingIngestion.enabled}
+              />
               <NumberField label="Streams/pipelines" value={streamingIngestion.number_of_streams} onChange={(value) => setStreamingIngestion({ ...streamingIngestion, number_of_streams: value })} disabled={!streamingIngestion.enabled} />
+              {streamingIngestion.ingestion_product === "structured_streaming" || streamingIngestion.ingestion_product === "dlt_continuous" ? (
+                <SelectField
+                  label="Streaming sizing mode"
+                  value={streamingIngestion.use_instance_sizing ? "instance" : "simple"}
+                  onChange={(value) => setStreamingIngestion({ ...streamingIngestion, use_instance_sizing: value === "instance" })}
+                  options={[
+                    { value: "instance", label: "Instance-based sizing" },
+                    { value: "simple", label: "Simple DBU/hour" }
+                  ]}
+                  disabled={!streamingIngestion.enabled}
+                />
+              ) : null}
+              {streamingIngestion.use_instance_sizing && (streamingIngestion.ingestion_product === "structured_streaming" || streamingIngestion.ingestion_product === "dlt_continuous") ? (
+                <>
+                  <SelectField
+                    label="Worker instance"
+                    value={streamingIngestion.worker_instance_type}
+                    onChange={(value) => setStreamingIngestion({ ...streamingIngestion, worker_instance_type: value })}
+                    options={getInstanceOptions(pricing)}
+                    disabled={!streamingIngestion.enabled}
+                  />
+                  <NumberField label="Worker count" value={streamingIngestion.worker_count} onChange={(value) => setStreamingIngestion({ ...streamingIngestion, worker_count: value })} disabled={!streamingIngestion.enabled} />
+                  <SelectField
+                    label="Driver instance"
+                    value={streamingIngestion.driver_instance_type}
+                    onChange={(value) => setStreamingIngestion({ ...streamingIngestion, driver_instance_type: value })}
+                    options={getInstanceOptions(pricing)}
+                    disabled={!streamingIngestion.enabled}
+                  />
+                  <NumberField label="Driver count" value={streamingIngestion.driver_count} onChange={(value) => setStreamingIngestion({ ...streamingIngestion, driver_count: value })} disabled={!streamingIngestion.enabled} />
+                </>
+              ) : null}
               {streamingIngestion.ingestion_product !== "zerobus_ingest" ? (
                 <>
-                  <NumberField label="Streaming DBU/hour" value={streamingIngestion.dbu_per_hour} onChange={(value) => setStreamingIngestion({ ...streamingIngestion, dbu_per_hour: value })} disabled={!streamingIngestion.enabled} />
-                  <NumberField label="Streaming DBU rate" value={streamingIngestion.dbu_rate ?? getDefaultStreamingDbuRate(pricing, streamingIngestion.ingestion_product)} onChange={(value) => setStreamingIngestion({ ...streamingIngestion, dbu_rate: value })} disabled={!streamingIngestion.enabled} />
-                  <NumberField label="EC2 hourly cost" value={streamingIngestion.ec2_hourly_cost} onChange={(value) => setStreamingIngestion({ ...streamingIngestion, ec2_hourly_cost: value })} disabled={!streamingIngestion.enabled || !streamingIngestion.include_ec2_cost} />
+                  <NumberField label="Streaming DBU/hour" value={streamingIngestion.dbu_per_hour} onChange={(value) => setStreamingIngestion({ ...streamingIngestion, dbu_per_hour: value })} disabled={!streamingIngestion.enabled || streamingIngestion.use_instance_sizing} />
+                  <NumberField label="Streaming DBU rate" value={streamingIngestion.dbu_rate ?? getDefaultStreamingDbuRate(pricing, streamingIngestion.ingestion_product, streamingIngestion.dlt_tier, streamingIngestion.photon_enabled)} onChange={(value) => setStreamingIngestion({ ...streamingIngestion, dbu_rate: value })} disabled={!streamingIngestion.enabled} />
+                  <NumberField label="EC2 hourly cost" value={streamingIngestion.ec2_hourly_cost} onChange={(value) => setStreamingIngestion({ ...streamingIngestion, ec2_hourly_cost: value })} disabled={!streamingIngestion.enabled || !streamingIngestion.include_ec2_cost || streamingIngestion.use_instance_sizing} />
                 </>
               ) : (
                 <NumberField label="Zerobus price/GB" value={pricing?.databricks.lakeflow_connect?.zerobus_ingest_price_per_gb ?? 0.072} onChange={() => undefined} disabled />
               )}
+              <NumberField
+                label="Source transfer GB/month"
+                value={streamingIngestion.source_transfer_gb_per_month ?? streamingIngestion.monthly_data_gb ?? streamingIngestion.daily_data_gb * streamingIngestion.days_per_month}
+                onChange={(value) => setStreamingIngestion({ ...streamingIngestion, source_transfer_gb_per_month: value })}
+                disabled={!streamingIngestion.enabled}
+              />
+              <NumberField
+                label="Network transfer price/GB"
+                value={
+                  streamingIngestion.source_transfer_price_per_gb_override ??
+                  getSourceTransferPricePerGb(pricing, streamingIngestion.source_location)
+                }
+                onChange={(value) => {
+                  setStreamingNetworkPriceManuallyEdited(true);
+                  setStreamingIngestion({ ...streamingIngestion, source_transfer_price_per_gb_override: value });
+                }}
+                disabled={!streamingIngestion.enabled}
+                hint={
+                  streamingNetworkPriceManuallyEdited
+                    ? "Custom value entered. Change Source location to reset back to the configured network rate."
+                    : "Auto-filled from Source location. Typical values: 0 same AZ, 0.01 same-region cross-AZ, 0.02 different region."
+                }
+              />
             </div>
             <div className="streaming-toggles">
               <label className="check-row">
@@ -1281,6 +1529,15 @@ function App() {
                   disabled={!streamingIngestion.enabled || streamingIngestion.ingestion_product === "zerobus_ingest"}
                 />
                 <span>Include classic cluster EC2 cost</span>
+              </label>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={streamingIngestion.photon_enabled}
+                  onChange={(event) => setStreamingIngestion({ ...streamingIngestion, photon_enabled: event.target.checked })}
+                  disabled={!streamingIngestion.enabled || streamingIngestion.ingestion_product === "lakeflow_connect" || streamingIngestion.ingestion_product === "zerobus_ingest"}
+                />
+                <span>Use Photon DBU mapping where supported</span>
               </label>
               <label className="check-row">
                 <input
@@ -1298,7 +1555,7 @@ function App() {
                 <strong>{streamingProductTitle(streamingIngestion.ingestion_product)}</strong>
                 <span>{streamingProductGuidance(streamingIngestion.source_type, streamingIngestion.ingestion_product)}</span>
                 <small>
-                  Runtime: {streamingIngestion.hours_per_day}h/day x {streamingIngestion.days_per_month} days x {streamingIngestion.number_of_streams} stream(s)
+                  Runtime: {streamingIngestion.monthly_runtime_hours ?? streamingIngestion.hours_per_day * streamingIngestion.days_per_month}h/month x {streamingIngestion.number_of_streams} stream(s)
                 </small>
               </div>
             </div>
@@ -1609,12 +1866,14 @@ function KnowledgeBasePage({ onBack }: { onBack: () => void }) {
               ["Enable toggle", "Keeps batch migration or scheduled pipeline cost out unless it is in scope."],
               ["Batch type", "One-time archive load, scheduled batch, metadata scan, or dashboard refresh."],
               ["Frequency", "One-time, daily, weekly, or monthly cadence."],
-              ["Data volume/run", "GB processed in each batch run. Useful for migration sizing and stakeholder assumptions."],
+              ["Data volume/run", "GB processed in each batch run. For one-time archive loads this should usually match Total data size GB."],
+              ["Batch sizing mode", "Simple DBU/hour uses a named cluster size. Instance-based sizing uses worker/driver instances and can include EC2."],
               ["Runs/month", "How many batch executions happen in a typical month."],
               ["Runtime minutes", "Average active job cluster runtime per execution."],
               ["Compute type", "Classic Jobs, Serverless Jobs, or DLT triggered pipeline."],
               ["Cluster size", "Configured batch cluster DBU/hour size, or custom DBU/hour."],
-              ["Pipelines/jobs", "Multiplier for multiple ingestion or refresh pipelines."]
+              ["Pipelines/jobs", "Multiplier for multiple ingestion or refresh pipelines."],
+              ["OPTIMIZE / compaction runs", "Optional Delta maintenance after ingest. Use 0 for archive-only storage; use 1 when converting many files into queryable Delta tables."]
             ]}
           />
           <KnowledgeCard
@@ -1622,7 +1881,7 @@ function KnowledgeBasePage({ onBack }: { onBack: () => void }) {
             rows={[
               ["Enable toggle", "Adds a separate always-on or long-running streaming cost line."],
               ["Source type", "Kafka, Pulsar, Kinesis, Event Hubs, CDC, SaaS connector, API/webhook, or other."],
-              ["Ingestion product", "Spark Structured Streaming, DLT continuous, Lakeflow Connect, or Zerobus Ingest."],
+              ["Streaming compute type", "Spark Structured Streaming, DLT continuous, Lakeflow Connect, or Zerobus Ingest."],
               ["Daily/monthly GB", "Approximate ingested data volume used for throughput and per-GB products."],
               ["Runtime pattern", "24/7, business hours, or custom active hours per day."],
               ["Streams/pipelines", "Multiplier for multiple independent streaming jobs."],
@@ -1657,6 +1916,63 @@ function KnowledgeBasePage({ onBack }: { onBack: () => void }) {
               ["Cost per GB", "Monthly total divided by dataset size."],
               ["Cost per 1,000 files", "Monthly total normalized by file count."]
             ]}
+          />
+        </div>
+      </section>
+
+      <section className="section knowledge-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Scenario examples</p>
+            <h3>What values should I enter?</h3>
+          </div>
+        </div>
+        <div className="scenario-guide-grid">
+          <ScenarioGuideCard
+            title="Only archive"
+            subtitle="Store legacy data, no Databricks processing"
+            intent="Use when the requirement is retention or migration into object storage only."
+            values={[
+              ["Scenario", "Archive-only"],
+              ["Batch ingestion", "Disabled"],
+              ["SQL queries/month", "0"],
+              ["Streaming ingestion", "Disabled"],
+              ["Storage copy multiplier", "1x or 2x depending on backup requirement"],
+              ["OPTIMIZE / compaction", "0"]
+            ]}
+            outcome="Costs are mostly storage, request, environment, backup, and buffer assumptions."
+          />
+          <ScenarioGuideCard
+            title="Archive plus batch"
+            subtitle="One-time load, backfill, conversion, or scheduled refresh"
+            intent="Use when Databricks is needed to copy, convert, register, validate, scan, or refresh data."
+            values={[
+              ["Scenario", "Basic query or Scheduled reporting"],
+              ["Batch ingestion", "Enabled"],
+              ["Batch type", "One-time archive load for migration; Scheduled batch for recurring work"],
+              ["Data volume/run GB", "For one-time load, use Total data size GB. For recurring jobs, use changed data per run."],
+              ["Runs/month", "1 for one-time estimate; daily is about 30, weekly about 4, monthly is 1"],
+              ["Avg runtime minutes", "30-60 for light jobs; 120+ for heavy conversion or validation"],
+              ["Pipelines/jobs", "1 unless multiple brand or source pipelines run separately"],
+              ["OPTIMIZE / compaction", "0 for raw archive; 1 if creating/querying Delta tables"]
+            ]}
+            outcome="Costs include storage plus one-time or recurring Databricks Jobs compute."
+          />
+          <ScenarioGuideCard
+            title="Archive plus batch plus streaming"
+            subtitle="Historical backfill plus long-running ingestion"
+            intent="Use when there is an initial archive/backfill and an ongoing Kafka, Pulsar, CDC, Event Hubs, or Kinesis feed."
+            values={[
+              ["Scenario", "Scheduled reporting or Self-service analytics"],
+              ["Batch ingestion", "Enabled for initial backfill or recurring file jobs"],
+              ["Streaming ingestion", "Enabled"],
+              ["Source type", "Kafka/Pulsar/Kinesis/Event Hubs/CDC based on the actual source"],
+              ["Runtime pattern", "24/7 always-on for continuous streams; business hours or custom for limited windows"],
+              ["Daily data ingested GB", "Expected daily feed volume, not historical archive size"],
+              ["Streams/pipelines", "Number of independent streaming pipelines"],
+              ["Sizing mode", "Use instance-based sizing when driver/worker shape is known"]
+            ]}
+            outcome="Costs include storage, batch compute, streaming compute, optional EC2, support uplift, discounts, and buffer."
           />
         </div>
       </section>
@@ -1726,6 +2042,39 @@ function KnowledgeBasePage({ onBack }: { onBack: () => void }) {
         </div>
       </section>
     </>
+  );
+}
+
+function ScenarioGuideCard({
+  title,
+  subtitle,
+  intent,
+  values,
+  outcome
+}: {
+  title: string;
+  subtitle: string;
+  intent: string;
+  values: Array<[string, string]>;
+  outcome: string;
+}) {
+  return (
+    <article className="scenario-guide-card">
+      <header>
+        <span>{subtitle}</span>
+        <h4>{title}</h4>
+      </header>
+      <p>{intent}</p>
+      <dl>
+        {values.map(([label, description]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{description}</dd>
+          </div>
+        ))}
+      </dl>
+      <footer>{outcome}</footer>
+    </article>
   );
 }
 
@@ -1903,21 +2252,25 @@ function PricingSourcePanel({ estimate, pricing }: { estimate: EstimateResponse;
         />
         <SourceCard
           title="Batch, streaming, optional AI/BI"
-          status="manual"
-          badgeLabel="Manual / public ref"
+          status={String(streaming.instance_pricing_status ?? jobs.instance_pricing_status ?? "fallback") === "live" ? "live" : "manual"}
+          badgeLabel={String(streaming.instance_pricing_status ?? jobs.instance_pricing_status ?? "fallback") === "live" ? "Live EC2 + DBU ref" : "DBU ref / EC2 fallback"}
           rows={[
             ["Batch rate source", "Editable DBU assumption"],
-            ["Reference", "Internal rate card or public Databricks list price"],
+            ["DBU reference", "Internal rate card or public Databricks list price"],
             ["Applied source", labelize(String(jobs.dbu_rate_source ?? "configured_classic_jobs_rate"))],
             ["Batch DBU/hour", String(jobs.dbu_per_hour ?? 0)],
             ["Batch DBU rate", formatUnitPrice(jobs.dbu_rate, estimate.currency)],
-            ["Streaming product", labelize(String(streaming.ingestion_product ?? "disabled"))],
+            ["Batch EC2/hr", formatUnitPrice(jobs.cluster_ec2_cost_per_hour, estimate.currency)],
+            ["Batch EC2 source", labelize(String(jobs.instance_pricing_source ?? "not_applicable"))],
+            ["Streaming compute type", labelize(String(streaming.ingestion_product ?? "disabled"))],
             ["Streaming DBU/hour", String(streaming.dbu_per_hour ?? 0)],
             ["Streaming monthly hours", String(streaming.monthly_streaming_hours ?? 0)],
+            ["Streaming EC2/hr", formatUnitPrice(streaming.cluster_ec2_cost_per_hour, estimate.currency)],
+            ["Streaming EC2 source", labelize(String(streaming.instance_pricing_source ?? "not_applicable"))],
             ["AI/BI enabled", String(aiBi.enabled ?? false)],
             ["AI/BI DBU rate", formatUnitPrice(aiBi.dbu_rate, estimate.currency)]
           ]}
-          note="These DBU rates are not treated as guaranteed enterprise prices. Use your internal committed-use or discount-adjusted rate where available."
+          note="Databricks DBU rates remain explicit assumptions. AWS EC2 instance prices are refreshed from the AWS Price List API in live mode and fall back to bundled config values otherwise."
         />
       </div>
     </div>
@@ -2021,12 +2374,14 @@ function NumberField({
   label,
   value,
   onChange,
-  disabled = false
+  disabled = false,
+  hint
 }: {
   label: string;
   value: number;
   onChange: (value: number) => void;
   disabled?: boolean;
+  hint?: string;
 }) {
   return (
     <label className="field">
@@ -2039,6 +2394,7 @@ function NumberField({
         onChange={(event) => onChange(parseNumberInputValue(event.target.value))}
         onFocus={(event) => event.currentTarget.select()}
       />
+      {hint ? <small className="field-hint">{hint}</small> : null}
     </label>
   );
 }
@@ -2410,7 +2766,18 @@ function buildScenarioRecommendation(
     key = "scheduled_reporting";
     reasons.push("Streaming ingestion is enabled, so this needs a compute-aware scenario rather than archive-only storage.");
     if (streaming.source_type === "kafka" || streaming.source_type === "pulsar") {
-      reasons.push("Kafka/Pulsar workloads should be sized as streaming pipelines, usually Spark Structured Streaming or DLT.");
+      reasons.push("Kafka/Pulsar workloads should use Spark Structured Streaming or DLT continuous, with driver/worker instance sizing and EC2 included for classic clusters.");
+    } else if (streaming.source_type === "saas_connector" || streaming.source_type === "cdc_database") {
+      reasons.push("SaaS and CDC sources are usually best modelled with Lakeflow Connect unless a custom pipeline is required.");
+    } else if (streaming.source_type === "api_webhook") {
+      reasons.push("Push-capable API/webhook sources can use Zerobus-style GB ingestion pricing.");
+    } else if (streaming.source_type === "object_store") {
+      reasons.push("Object-store ingestion should usually be modelled as Auto Loader or COPY INTO style batch/streaming file ingestion.");
+    }
+    if (streaming.use_instance_sizing) {
+      reasons.push(`Streaming is using ${streaming.worker_count} worker(s) plus ${streaming.driver_count} driver(s) on ${streaming.worker_instance_type}.`);
+    } else {
+      reasons.push("Streaming is using simple DBU/hour input; use instance-based sizing for closer parity with the pricing reference.");
     }
   } else if (aiBi.enabled) {
     key = "future_ai_bi";
@@ -2474,19 +2841,31 @@ function getDefaultJobDbuRate(pricing: PricingConfig | null) {
   return pricing?.databricks.dbu_rates?.jobs?.classic ?? pricing?.databricks.dbu_rates?.jobs?.default ?? pricing?.databricks.default_dbu_rate ?? 0;
 }
 
-function getDefaultBatchDbuRate(pricing: PricingConfig | null, computeType: JobComputeInput["compute_type"]) {
+function getDefaultBatchDbuRate(
+  pricing: PricingConfig | null,
+  computeType: JobComputeInput["compute_type"],
+  dltTier: JobComputeInput["dlt_tier"] = "core"
+) {
   if (computeType === "serverless_jobs") {
     return pricing?.databricks.dbu_rates?.jobs?.serverless ?? pricing?.databricks.default_dbu_rate ?? 0;
   }
   if (computeType === "dlt_triggered") {
-    return pricing?.databricks.dbu_rates?.dlt?.core ?? pricing?.databricks.default_dbu_rate ?? 0;
+    return pricing?.databricks.dbu_rates?.dlt?.[dltTier] ?? pricing?.databricks.dbu_rates?.dlt?.core ?? pricing?.databricks.default_dbu_rate ?? 0;
+  }
+  if (computeType === "jobs_photon") {
+    return pricing?.databricks.dbu_rates?.jobs?.photon ?? pricing?.databricks.dbu_rates?.jobs?.classic ?? pricing?.databricks.default_dbu_rate ?? 0;
   }
   return getDefaultJobDbuRate(pricing);
 }
 
-function getDefaultStreamingDbuRate(pricing: PricingConfig | null, product: StreamingIngestionInput["ingestion_product"]) {
+function getDefaultStreamingDbuRate(
+  pricing: PricingConfig | null,
+  product: StreamingIngestionInput["ingestion_product"],
+  dltTier: StreamingIngestionInput["dlt_tier"] = "core",
+  photonEnabled = false
+) {
   if (product === "dlt_continuous") {
-    return pricing?.databricks.dbu_rates?.dlt?.core ?? pricing?.databricks.default_dbu_rate ?? 0;
+    return pricing?.databricks.dbu_rates?.dlt?.[dltTier] ?? pricing?.databricks.dbu_rates?.dlt?.core ?? pricing?.databricks.default_dbu_rate ?? 0;
   }
   if (product === "lakeflow_connect") {
     return pricing?.databricks.lakeflow_connect?.managed_connectors_dbu_rate ?? pricing?.databricks.default_dbu_rate ?? 0;
@@ -2494,7 +2873,26 @@ function getDefaultStreamingDbuRate(pricing: PricingConfig | null, product: Stre
   if (product === "zerobus_ingest") {
     return 0;
   }
+  if (photonEnabled) {
+    return pricing?.databricks.dbu_rates?.jobs?.photon ?? pricing?.databricks.dbu_rates?.jobs?.classic ?? pricing?.databricks.default_dbu_rate ?? 0;
+  }
   return getDefaultJobDbuRate(pricing);
+}
+
+function getSourceTransferPricePerGb(
+  pricing: PricingConfig | null,
+  sourceLocation: StreamingIngestionInput["source_location"]
+) {
+  return pricing?.network?.source_transfer?.[sourceLocation]?.price_per_gb ?? 0;
+}
+
+function getInstanceOptions(pricing: PricingConfig | null) {
+  const instances = pricing?.databricks.instance_types ?? {};
+  const options = Object.entries(instances).map(([key, value]) => ({
+    value: key,
+    label: value.display_name || key
+  }));
+  return options.length > 0 ? options : [{ value: "m5.xlarge", label: "m5.xlarge" }];
 }
 
 function getDefaultAiBiDbuRate(pricing: PricingConfig | null) {

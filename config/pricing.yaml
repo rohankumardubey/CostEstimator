@@ -2,6 +2,19 @@ currency: USD
 default_buffer_percentage: 15
 
 network:
+  source_transfer:
+    same_az:
+      display_name: Same AZ as workspace
+      price_per_gb: 0
+    same_region_cross_az:
+      display_name: Same region, different AZ
+      price_per_gb: 0.01
+    different_region:
+      display_name: Different AWS region
+      price_per_gb: 0.02
+    on_prem_internet:
+      display_name: On-premises / internet ingress
+      price_per_gb: 0
   cross_region_transfer:
     default_price_per_gb: 0.02
     pricing_source: config_fallback
@@ -382,6 +395,7 @@ databricks:
       serverless: 0.70
     jobs:
       classic: 0.26
+      photon: 0.28
       serverless: 0.16
     dlt:
       core: 0.25
@@ -393,6 +407,97 @@ databricks:
     managed_connectors_dbu_rate: 0.50
     free_dbu_per_workspace_day: 100
     zerobus_ingest_price_per_gb: 0.072
+  instance_types:
+    m5.xlarge:
+      display_name: m5.xlarge (4 vCPU, 16 GiB)
+      vcpu: 4
+      memory_gib: 16
+      jobs_dbu_per_hour: 1.5
+      photon_dbu_per_hour: 2
+      ec2_price_per_hour: 0.214
+      pricing_source: config/pricing.yaml
+      pricing_status: fallback
+      pricing_note: Bundled EC2 fallback; live AWS EC2 pricing replaces this in live mode.
+    m5.2xlarge:
+      display_name: m5.2xlarge (8 vCPU, 32 GiB)
+      vcpu: 8
+      memory_gib: 32
+      jobs_dbu_per_hour: 3
+      photon_dbu_per_hour: 4
+      ec2_price_per_hour: 0.428
+      pricing_source: config/pricing.yaml
+      pricing_status: fallback
+      pricing_note: Bundled EC2 fallback; live AWS EC2 pricing replaces this in live mode.
+    m5.4xlarge:
+      display_name: m5.4xlarge (16 vCPU, 64 GiB)
+      vcpu: 16
+      memory_gib: 64
+      jobs_dbu_per_hour: 6
+      photon_dbu_per_hour: 8
+      ec2_price_per_hour: 0.856
+      pricing_source: config/pricing.yaml
+      pricing_status: fallback
+      pricing_note: Bundled EC2 fallback; live AWS EC2 pricing replaces this in live mode.
+    r6i.xlarge:
+      display_name: r6i.xlarge (4 vCPU, 32 GiB)
+      vcpu: 4
+      memory_gib: 32
+      jobs_dbu_per_hour: 1.5
+      photon_dbu_per_hour: 2
+      ec2_price_per_hour: 0.282
+      pricing_source: config/pricing.yaml
+      pricing_status: fallback
+      pricing_note: Bundled EC2 fallback; live AWS EC2 pricing replaces this in live mode.
+    r6i.2xlarge:
+      display_name: r6i.2xlarge (8 vCPU, 64 GiB)
+      vcpu: 8
+      memory_gib: 64
+      jobs_dbu_per_hour: 3
+      photon_dbu_per_hour: 4
+      ec2_price_per_hour: 0.564
+      pricing_source: config/pricing.yaml
+      pricing_status: fallback
+      pricing_note: Bundled EC2 fallback; live AWS EC2 pricing replaces this in live mode.
+    c6i.xlarge:
+      display_name: c6i.xlarge (4 vCPU, 8 GiB)
+      vcpu: 4
+      memory_gib: 8
+      jobs_dbu_per_hour: 1.5
+      photon_dbu_per_hour: 2
+      ec2_price_per_hour: 0.1824
+      pricing_source: config/pricing.yaml
+      pricing_status: fallback
+      pricing_note: Bundled EC2 fallback; live AWS EC2 pricing replaces this in live mode.
+    c6i.2xlarge:
+      display_name: c6i.2xlarge (8 vCPU, 16 GiB)
+      vcpu: 8
+      memory_gib: 16
+      jobs_dbu_per_hour: 3
+      photon_dbu_per_hour: 4
+      ec2_price_per_hour: 0.3648
+      pricing_source: config/pricing.yaml
+      pricing_status: fallback
+      pricing_note: Bundled EC2 fallback; live AWS EC2 pricing replaces this in live mode.
+    i3.xlarge:
+      display_name: i3.xlarge (4 vCPU, 30.5 GiB)
+      vcpu: 4
+      memory_gib: 30.5
+      jobs_dbu_per_hour: 1.5
+      photon_dbu_per_hour:
+      ec2_price_per_hour: 0.344
+      pricing_source: config/pricing.yaml
+      pricing_status: fallback
+      pricing_note: Bundled EC2 fallback; live AWS EC2 pricing replaces this in live mode.
+    i3.2xlarge:
+      display_name: i3.2xlarge (8 vCPU, 61 GiB)
+      vcpu: 8
+      memory_gib: 61
+      jobs_dbu_per_hour: 3
+      photon_dbu_per_hour:
+      ec2_price_per_hour: 0.688
+      pricing_source: config/pricing.yaml
+      pricing_status: fallback
+      pricing_note: Bundled EC2 fallback; live AWS EC2 pricing replaces this in live mode.
   sql_warehouses:
     xs:
       display_name: 2X-Small

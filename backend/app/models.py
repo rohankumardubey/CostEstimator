@@ -34,6 +34,7 @@ class IngestionFrequency(str, Enum):
 
 class BatchComputeType(str, Enum):
     classic_jobs = "classic_jobs"
+    jobs_photon = "jobs_photon"
     serverless_jobs = "serverless_jobs"
     dlt_triggered = "dlt_triggered"
 
@@ -45,7 +46,9 @@ class StreamingSourceType(str, Enum):
     event_hubs = "event_hubs"
     cdc_database = "cdc_database"
     saas_connector = "saas_connector"
+    object_store = "object_store"
     api_webhook = "api_webhook"
+    on_prem_system = "on_prem_system"
     other = "other"
 
 
@@ -60,6 +63,19 @@ class StreamingRuntimePattern(str, Enum):
     always_on = "always_on"
     business_hours = "business_hours"
     custom = "custom"
+
+
+class SourceLocation(str, Enum):
+    same_az = "same_az"
+    same_region_cross_az = "same_region_cross_az"
+    different_region = "different_region"
+    on_prem_internet = "on_prem_internet"
+
+
+class DltTier(str, Enum):
+    core = "core"
+    pro = "pro"
+    advanced = "advanced"
 
 
 class RedundancyModel(str, Enum):
@@ -115,12 +131,22 @@ class JobComputeInput(BaseModel):
     batch_type: str = Field(default="scheduled_batch", max_length=80)
     data_volume_per_run_gb: float = Field(default=0, ge=0)
     compute_type: BatchComputeType = BatchComputeType.classic_jobs
+    dlt_tier: DltTier = DltTier.core
+    use_instance_sizing: bool = False
+    worker_instance_type: str = Field(default="m5.xlarge", max_length=80)
+    worker_count: int = Field(default=2, ge=0, le=500)
+    driver_instance_type: str = Field(default="m5.xlarge", max_length=80)
+    driver_count: int = Field(default=1, ge=0, le=5)
+    photon_enabled: bool = False
+    include_ec2_cost: bool = False
     job_runs_per_month: int = Field(default=1, ge=0)
     average_job_runtime_minutes: float = Field(default=0, ge=0)
     job_cluster_size: str = Field(default="small", min_length=1)
     custom_dbu_per_hour: float | None = Field(default=None, ge=0)
     dbu_rate: float | None = Field(default=None, ge=0)
     number_of_jobs: int = Field(default=1, ge=0)
+    compaction_runs_per_month: int = Field(default=0, ge=0)
+    average_compaction_runtime_minutes: float = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def validate_custom_size(self) -> "JobComputeInput":
@@ -133,16 +159,27 @@ class StreamingIngestionInput(BaseModel):
     enabled: bool = False
     source_type: StreamingSourceType = StreamingSourceType.kafka
     ingestion_product: StreamingIngestionProduct = StreamingIngestionProduct.structured_streaming
+    source_location: SourceLocation = SourceLocation.same_region_cross_az
+    trigger_interval: str = Field(default="continuous", max_length=80)
     daily_data_gb: float = Field(default=0, ge=0)
     monthly_data_gb: float | None = Field(default=None, ge=0)
     runtime_pattern: StreamingRuntimePattern = StreamingRuntimePattern.always_on
     hours_per_day: float = Field(default=24, ge=0, le=24)
     days_per_month: int = Field(default=30, ge=0, le=31)
+    monthly_runtime_hours: float | None = Field(default=None, ge=0)
     number_of_streams: int = Field(default=1, ge=0)
+    dlt_tier: DltTier = DltTier.core
+    use_instance_sizing: bool = True
+    worker_instance_type: str = Field(default="m5.xlarge", max_length=80)
+    worker_count: int = Field(default=2, ge=0, le=500)
+    driver_instance_type: str = Field(default="m5.xlarge", max_length=80)
+    driver_count: int = Field(default=1, ge=0, le=5)
     dbu_per_hour: float = Field(default=4, ge=0)
     dbu_rate: float | None = Field(default=None, ge=0)
     include_ec2_cost: bool = False
     ec2_hourly_cost: float = Field(default=0, ge=0)
+    source_transfer_gb_per_month: float | None = Field(default=None, ge=0)
+    source_transfer_price_per_gb_override: float | None = Field(default=None, ge=0)
     free_tier_already_consumed: bool = True
     photon_enabled: bool = False
 

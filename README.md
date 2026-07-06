@@ -259,7 +259,7 @@ The app is designed for manual entry of aggregate dataset metadata:
 - Redundancy model and storage copy multiplier.
 - Optional cross-region DR destination, initial replication GB, monthly changed-data GB, and monthly cross-region read GB.
 - Optional batch ingestion details such as one-time/archive load, schedule, GB per run, runtime, compute type, DBU/hour, and DBU rate.
-- Optional streaming ingestion details such as source type, ingestion product, daily/monthly GB, runtime pattern, streams, DBU/hour, DBU rate, and optional EC2 hourly cost.
+- Optional streaming ingestion details such as source type, streaming compute type, daily/monthly GB, runtime pattern, streams, DBU/hour, DBU rate, and optional EC2 hourly cost.
 - Optional support cost percentage, Databricks discount percentage, and cloud discount percentage.
 
 Do not enter raw file contents, source document text, or sensitive business data.
