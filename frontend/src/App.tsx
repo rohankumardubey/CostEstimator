@@ -386,6 +386,13 @@ function App() {
   const destinationRegionOptions = Object.entries(cloudConfig?.regions ?? {})
     .filter(([key]) => key !== dataset.region)
     .map(([key, region]) => ({ value: key, label: region.display_name }));
+  const crossRegionEffectiveTransferPrice = getCrossRegionTransferPricePerGb(
+    estimate,
+    pricing,
+    dataset.cloud_provider,
+    dataset.region,
+    crossRegionTransfer.destination_region
+  );
 
   function applyScenario(key: string) {
     const scenario = scenarios[key];
@@ -415,7 +422,8 @@ function App() {
     setDataset((current) => ({ ...current, cloud_provider: nextCloud, region: defaultRegion }));
     setCrossRegionTransfer((current) => ({
       ...current,
-      destination_region: ""
+      destination_region: "",
+      transfer_price_per_gb_override: null
     }));
     setStorage((current) => ({
       ...current,
@@ -911,7 +919,13 @@ function App() {
                   if (crossRegionTransfer.destination_region === value) {
                     setCrossRegionTransfer({
                       ...crossRegionTransfer,
-                      destination_region: ""
+                      destination_region: "",
+                      transfer_price_per_gb_override: null
+                    });
+                  } else {
+                    setCrossRegionTransfer({
+                      ...crossRegionTransfer,
+                      transfer_price_per_gb_override: null
                     });
                   }
                 }}
@@ -1015,7 +1029,7 @@ function App() {
                 <SelectField
                   label="Destination region"
                   value={crossRegionTransfer.destination_region}
-                  onChange={(value) => setCrossRegionTransfer({ ...crossRegionTransfer, destination_region: value })}
+                  onChange={(value) => setCrossRegionTransfer({ ...crossRegionTransfer, destination_region: value, transfer_price_per_gb_override: null })}
                   options={[{ value: "", label: "Select destination" }, ...destinationRegionOptions]}
                   disabled={!crossRegionTransfer.enabled}
                 />
@@ -1045,10 +1059,14 @@ function App() {
                 />
                 <NumberField
                   label="Network transfer price/GB"
-                  value={crossRegionTransfer.transfer_price_per_gb_override ?? 0}
+                  value={crossRegionTransfer.transfer_price_per_gb_override ?? crossRegionEffectiveTransferPrice}
                   onChange={(value) => setCrossRegionTransfer({ ...crossRegionTransfer, transfer_price_per_gb_override: value > 0 ? value : null })}
                   disabled={!crossRegionTransfer.enabled}
-                  hint="Example: 0 for no override, 0.01 same-region cross-AZ, 0.02 cross-region estimate."
+                  hint={
+                    crossRegionTransfer.transfer_price_per_gb_override !== null && crossRegionTransfer.transfer_price_per_gb_override !== undefined
+                      ? "Custom route price entered. Change destination region to reset to live/configured route pricing."
+                      : "Auto-filled from selected route when available. Enter a value only to override."
+                  }
                 />
               </div>
               <div className="enterprise-note-card compact">
@@ -1199,7 +1217,7 @@ function App() {
                 value={jobCompute.use_instance_sizing ? "instance" : "simple"}
                 onChange={(value) => setJobCompute({ ...jobCompute, use_instance_sizing: value === "instance", include_ec2_cost: value === "instance" ? jobCompute.include_ec2_cost : false })}
                 options={[
-                  { value: "simple", label: "Simple DBU/hour" },
+                  { value: "simple", label: "Manual DBU/hour" },
                   { value: "instance", label: "Instance-based sizing" }
                 ]}
                 disabled={!jobCompute.enabled || jobCompute.compute_type === "serverless_jobs"}
@@ -1462,7 +1480,7 @@ function App() {
                   onChange={(value) => setStreamingIngestion({ ...streamingIngestion, use_instance_sizing: value === "instance" })}
                   options={[
                     { value: "instance", label: "Instance-based sizing" },
-                    { value: "simple", label: "Simple DBU/hour" }
+                    { value: "simple", label: "Manual DBU/hour" }
                   ]}
                   disabled={!streamingIngestion.enabled}
                 />
@@ -1867,7 +1885,7 @@ function KnowledgeBasePage({ onBack }: { onBack: () => void }) {
               ["Batch type", "One-time archive load, scheduled batch, metadata scan, or dashboard refresh."],
               ["Frequency", "One-time, daily, weekly, or monthly cadence."],
               ["Data volume/run", "GB processed in each batch run. For one-time archive loads this should usually match Total data size GB."],
-              ["Batch sizing mode", "Simple DBU/hour uses a named cluster size. Instance-based sizing uses worker/driver instances and can include EC2."],
+              ["Batch sizing mode", "Manual DBU/hour uses a directly entered DBU/hour or named job size. Instance-based sizing uses worker/driver instances and can include EC2."],
               ["Runs/month", "How many batch executions happen in a typical month."],
               ["Runtime minutes", "Average active job cluster runtime per execution."],
               ["Compute type", "Classic Jobs, Serverless Jobs, or DLT triggered pipeline."],
@@ -2383,16 +2401,48 @@ function NumberField({
   disabled?: boolean;
   hint?: string;
 }) {
+  const [draftValue, setDraftValue] = useState(() => formatNumberInputValue(value));
+  const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    if (!isEditing) {
+      setDraftValue(formatNumberInputValue(value));
+    }
+  }, [isEditing, value]);
+
   return (
     <label className="field">
       <span>{label}</span>
       <input
         type="text"
         inputMode="decimal"
-        value={formatNumberInputValue(value)}
+        value={draftValue}
         disabled={disabled}
-        onChange={(event) => onChange(parseNumberInputValue(event.target.value))}
-        onFocus={(event) => event.currentTarget.select()}
+        onChange={(event) => {
+          const nextValue = normalizeNumberInputDraft(event.target.value);
+          if (!isValidNumberInputDraft(nextValue)) {
+            return;
+          }
+          setDraftValue(nextValue);
+          if (nextValue === "" || nextValue === ".") {
+            return;
+          }
+          const parsed = parseNumberInputValue(nextValue);
+          if (Number.isFinite(parsed)) {
+            onChange(parsed);
+          }
+        }}
+        onFocus={(event) => {
+          setIsEditing(true);
+          event.currentTarget.select();
+        }}
+        onBlur={() => {
+          setIsEditing(false);
+          const parsed = parseNumberInputValue(draftValue);
+          const normalized = Number.isFinite(parsed) ? parsed : 0;
+          onChange(normalized);
+          setDraftValue(formatNumberInputValue(normalized));
+        }}
       />
       {hint ? <small className="field-hint">{hint}</small> : null}
     </label>
@@ -2682,8 +2732,16 @@ function formatNumberInputValue(value: number) {
   return Number.isFinite(value) ? String(value) : "0";
 }
 
+function normalizeNumberInputDraft(value: string) {
+  return value.replace(/,/g, "").trim();
+}
+
+function isValidNumberInputDraft(value: string) {
+  return /^\d*(?:\.\d*)?$/.test(value);
+}
+
 function parseNumberInputValue(value: string) {
-  const cleaned = value.replace(/[^\d.]/g, "");
+  const cleaned = normalizeNumberInputDraft(value).replace(/[^\d.]/g, "");
   const parts = cleaned.split(".");
   const normalized = parts.length > 1 ? `${parts[0]}.${parts.slice(1).join("")}` : parts[0];
   if (normalized === "" || normalized === ".") {
@@ -2884,6 +2942,33 @@ function getSourceTransferPricePerGb(
   sourceLocation: StreamingIngestionInput["source_location"]
 ) {
   return pricing?.network?.source_transfer?.[sourceLocation]?.price_per_gb ?? 0;
+}
+
+function getCrossRegionTransferPricePerGb(
+  estimate: EstimateResponse | null,
+  pricing: PricingConfig | null,
+  cloudProvider: CloudProvider,
+  sourceRegion: string,
+  destinationRegion: string
+) {
+  if (!destinationRegion) {
+    return 0;
+  }
+
+  const estimatedPrice = estimate?.components.find((component) => component.label === "Cross-region DR")?.assumptions.price_per_gb;
+  const parsedEstimatedPrice = typeof estimatedPrice === "number" ? estimatedPrice : Number(estimatedPrice);
+  if (Number.isFinite(parsedEstimatedPrice)) {
+    return parsedEstimatedPrice;
+  }
+
+  const transferConfig = pricing?.network?.cross_region_transfer;
+  const providerConfig = transferConfig?.[cloudProvider];
+  return (
+    providerConfig?.routes?.[sourceRegion]?.[destinationRegion]?.price_per_gb ??
+    providerConfig?.default_price_per_gb ??
+    transferConfig?.default_price_per_gb ??
+    0
+  );
 }
 
 function getInstanceOptions(pricing: PricingConfig | null) {

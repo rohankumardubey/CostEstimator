@@ -204,6 +204,15 @@ export interface PricingConfig {
   };
   network?: {
     source_transfer?: Partial<Record<SourceLocation, { display_name: string; price_per_gb: number }>>;
+    cross_region_transfer?: {
+      default_price_per_gb?: number;
+      pricing_source?: string;
+      pricing_status?: string;
+      pricing_note?: string;
+      aws?: CrossRegionTransferPricingProvider;
+      azure?: CrossRegionTransferPricingProvider;
+      gcp?: CrossRegionTransferPricingProvider;
+    };
   };
   cloud: Record<
     CloudProvider,
@@ -276,4 +285,23 @@ export interface PricingConfig {
     suggested_scenarios?: string[];
   };
   disclaimer: string;
+}
+
+export interface CrossRegionTransferPricingProvider {
+  default_price_per_gb?: number;
+  pricing_source?: string;
+  pricing_status?: string;
+  pricing_note?: string;
+  routes?: Record<
+    string,
+    Record<
+      string,
+      {
+        price_per_gb?: number;
+        pricing_source?: string;
+        pricing_status?: string;
+        pricing_note?: string;
+      }
+    >
+  >;
 }

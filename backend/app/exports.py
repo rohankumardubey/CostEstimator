@@ -110,26 +110,26 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
         "Section",
         parent=styles["Heading2"],
         fontName="Helvetica-Bold",
-        fontSize=8.4,
-        leading=9.4,
+        fontSize=8,
+        leading=8.8,
         textColor=colors.HexColor("#101828"),
-        spaceBefore=4,
-        spaceAfter=2,
+        spaceBefore=2,
+        spaceAfter=1,
     )
     body_style = ParagraphStyle(
         "Body",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=6.5,
-        leading=7.6,
+        fontSize=6.1,
+        leading=6.9,
         textColor=colors.HexColor("#344054"),
         alignment=TA_LEFT,
     )
     small_style = ParagraphStyle(
         "Small",
         parent=body_style,
-        fontSize=5.9,
-        leading=7,
+        fontSize=5.5,
+        leading=6.2,
         textColor=colors.HexColor("#475467"),
     )
     card_label_style = ParagraphStyle(
@@ -154,15 +154,15 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
     doc = SimpleDocTemplate(
         buffer,
         pagesize=landscape(letter),
-        rightMargin=0.28 * inch,
-        leftMargin=0.28 * inch,
-        topMargin=0.22 * inch,
-        bottomMargin=0.2 * inch,
+        rightMargin=0.24 * inch,
+        leftMargin=0.24 * inch,
+        topMargin=0.2 * inch,
+        bottomMargin=0.18 * inch,
     )
 
     story: list[Any] = [
         _report_header(estimate.generated_at, title_style, subtitle_style, header_meta_style),
-        Spacer(1, 6),
+        Spacer(1, 4),
     ]
 
     compute_monthly = (
@@ -180,7 +180,7 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
         ["Confidence", f"{estimate.confidence_level} {estimate.confidence_score}/100"],
     ]
     story.append(_kpi_cards(card_rows, card_label_style, card_value_style))
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 4))
 
     dataset_rows = [
         ["Team", request.dataset.team_name],
@@ -221,14 +221,14 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
         recommendation_rows = [
             ["Recommended scenario", export_request.recommendation.title],
             ["Summary", _clip_text(export_request.recommendation.summary, 150)],
-            ["Reasons", _clip_text("; ".join(export_request.recommendation.reasons[:3]), 260)],
+            ["Reasons", _clip_text("; ".join(export_request.recommendation.reasons[:3]), 190)],
         ]
 
     confidence_summary = _confidence_explanation(export_request)
     confidence_rows = [
         ["Confidence", f"{estimate.confidence_level} ({estimate.confidence_score})"],
-        ["Explanation", _clip_text(confidence_summary, 240)],
-        ["Warnings", _clip_text(_warning_summary(estimate), 220)],
+        ["Explanation", _clip_text(confidence_summary, 170)],
+        ["Warnings", _clip_text(_warning_summary(estimate), 150)],
     ]
     story.append(
         _two_column_panels(
@@ -236,7 +236,7 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
             _section_block("Confidence explanation", confidence_rows, body_style, col_widths=[1.45 * inch, 3.55 * inch]),
         )
     )
-    story.append(Spacer(1, 5))
+    story.append(Spacer(1, 4))
 
     source_rows = [
         ["Pricing mode", str((export_request.pricing_source or {}).get("mode", "Not available"))],
@@ -245,23 +245,21 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
         ["Storage status", str(_component_assumption(estimate, "Storage", "pricing_status"))],
         ["SQL DBU source", str(_component_assumption(estimate, "Databricks SQL compute", "dbu_rate_source"))],
         ["Batch DBU source", str(_component_assumption(estimate, "Batch ingestion compute", "dbu_rate_source"))],
-        ["Batch EC2 source", str(_component_assumption(estimate, "Batch ingestion compute", "instance_pricing_source"))],
         ["Streaming DBU source", str(_component_assumption(estimate, "Streaming ingestion compute", "dbu_rate_source"))],
         ["Streaming EC2 source", str(_component_assumption(estimate, "Streaming ingestion compute", "instance_pricing_source"))],
     ]
     workload_rows = [
         ["Storage class", str(_component_assumption(estimate, "Storage", "storage_display_name"))],
         ["Storage price/GB-month", str(_component_assumption(estimate, "Storage", "price_per_gb_month"))],
-        ["Effective GB with growth", str(_component_assumption(estimate, "Storage", "effective_gb_with_growth"))],
         ["SQL warehouse", f"{request.sql_compute.warehouse_type.value} / {request.sql_compute.warehouse_size}"],
         ["SQL DBU/hour", str(_component_assumption(estimate, "Databricks SQL compute", "dbu_per_hour"))],
         ["SQL DBU rate", str(_component_assumption(estimate, "Databricks SQL compute", "dbu_rate"))],
         ["Queries/month", f"{request.sql_compute.queries_per_month:,}"],
         ["Batch", f"{request.job_compute.ingestion_frequency.value} / {request.job_compute.job_runs_per_month:,} runs"],
-        ["Batch sizing", f"{request.job_compute.worker_count} workers + {request.job_compute.driver_count} driver on {request.job_compute.worker_instance_type}" if request.job_compute.use_instance_sizing else "Simple DBU/hour"],
+        ["Batch sizing", f"{request.job_compute.worker_count} workers + {request.job_compute.driver_count} driver on {request.job_compute.worker_instance_type}" if request.job_compute.use_instance_sizing else "Manual DBU/hour"],
         ["Batch compaction", f"{request.job_compute.compaction_runs_per_month:,} runs"],
         ["Streaming", f"{request.streaming_ingestion.source_type.value} / {request.streaming_ingestion.ingestion_product.value}"],
-        ["Streaming sizing", f"{request.streaming_ingestion.worker_count} workers + {request.streaming_ingestion.driver_count} driver on {request.streaming_ingestion.worker_instance_type}" if request.streaming_ingestion.use_instance_sizing else "Simple DBU/hour"],
+        ["Streaming sizing", f"{request.streaming_ingestion.worker_count} workers + {request.streaming_ingestion.driver_count} driver on {request.streaming_ingestion.worker_instance_type}" if request.streaming_ingestion.use_instance_sizing else "Manual DBU/hour"],
         ["Streaming hours/month", str(_component_assumption(estimate, "Streaming ingestion compute", "monthly_streaming_hours"))],
         ["Streaming transfer", f"{_component_assumption(estimate, 'Streaming ingestion compute', 'source_location')} / {_component_assumption(estimate, 'Streaming ingestion compute', 'source_transfer_price_per_gb')} per GB"],
     ]
@@ -297,15 +295,11 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
         )
     )
     story.append(assumptions_table)
-    story.append(Spacer(1, 4))
-    story.append(_validation_strip(body_style))
-    story.append(Spacer(1, 4))
+    story.append(Spacer(1, 3))
 
     footer_text = (
-        "Metadata only - do not include raw source files, sensitive documents, or business content. "
-        "Not included unless entered: negotiated discounts, committed-use discounts, support contracts, "
-            "streaming broker charges, network charges outside configured DR inputs, and final workspace configuration. "
-        f"{estimate.disclaimer}"
+        "Metadata-only indicative estimate. Validate DBU rates, enterprise discounts, workspace configuration, DR scope, "
+        "support ownership, broker/platform costs, and network charges with FinOps/platform owners before approval."
     )
     story.append(_footer_notice(footer_text, small_style))
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -55,6 +57,37 @@ def test_pdf_export_endpoint() -> None:
     assert export_response.content.startswith(b"%PDF")
 
 
+def test_pdf_export_stays_single_page_for_full_workload() -> None:
+    payload = _full_workload_estimate_payload()
+    estimate_response = client.post("/estimate", json=payload)
+    export_response = client.post(
+        "/export/pdf",
+        json={
+            "request": payload,
+            "estimate": estimate_response.json(),
+            "recommendation": {
+                "key": "scheduled_reporting",
+                "title": "Recommended: Scheduled reporting",
+                "summary": "Storage, recurring jobs, dashboard refreshes, and light warehouse usage.",
+                "reasons": [
+                    "Streaming ingestion is enabled, so this needs a compute-aware scenario rather than archive-only storage.",
+                    "Kafka/Pulsar workloads should use Spark Structured Streaming or DLT continuous.",
+                    "Streaming is using 2 workers plus 1 driver on m5.xlarge.",
+                ],
+            },
+            "pricing_source": {
+                "mode": "live",
+                "updated_at": "2026-07-06T19:15:27+00:00",
+                "cache_seconds": 21600,
+                "notes": [],
+            },
+        },
+    )
+
+    assert export_response.status_code == 200
+    assert len(re.findall(rb"/Type\s*/Page\b", export_response.content)) == 1
+
+
 def test_scenario_comparison_endpoint() -> None:
     response = client.post("/scenario-comparison", json=_estimate_payload())
 
@@ -100,3 +133,96 @@ def _estimate_payload() -> dict:
         },
         "ai_bi": {"enabled": False},
     }
+
+
+def _full_workload_estimate_payload() -> dict:
+    payload = _estimate_payload()
+    payload["scenario_key"] = "scheduled_reporting"
+    payload["dataset"] = {
+        **payload["dataset"],
+        "team_name": "Example Data Team",
+        "brand_or_dataset_name": "Legacy collaboration archive",
+        "number_of_environments": 3,
+        "redundancy_model": "backup_copy",
+        "replication_factor": 2,
+    }
+    payload["storage"] = {
+        "storage_class": "s3_standard",
+        "monthly_read_requests": 1500,
+        "monthly_write_requests": 1500,
+    }
+    payload["sql_compute"] = {
+        **payload["sql_compute"],
+        "queries_per_month": 150,
+        "average_query_runtime_minutes": 3,
+        "concurrent_users": 2,
+        "auto_stop_minutes": 5,
+        "usage_pattern": "occasional",
+    }
+    payload["job_compute"] = {
+        "enabled": True,
+        "ingestion_frequency": "one-time",
+        "batch_type": "one_time_archive_load",
+        "data_volume_per_run_gb": 31.13,
+        "compute_type": "classic_jobs",
+        "dlt_tier": "core",
+        "use_instance_sizing": False,
+        "worker_instance_type": "m5.xlarge",
+        "worker_count": 2,
+        "driver_instance_type": "m5.xlarge",
+        "driver_count": 1,
+        "photon_enabled": False,
+        "include_ec2_cost": False,
+        "job_runs_per_month": 1,
+        "average_job_runtime_minutes": 20,
+        "job_cluster_size": "small",
+        "dbu_rate": 0.26,
+        "number_of_jobs": 1,
+        "compaction_runs_per_month": 1,
+        "average_compaction_runtime_minutes": 15,
+    }
+    payload["streaming_ingestion"] = {
+        "enabled": True,
+        "source_type": "kafka",
+        "ingestion_product": "structured_streaming",
+        "source_location": "same_az",
+        "trigger_interval": "continuous",
+        "daily_data_gb": 3,
+        "monthly_data_gb": 90,
+        "runtime_pattern": "always_on",
+        "hours_per_day": 24,
+        "days_per_month": 30,
+        "monthly_runtime_hours": 730,
+        "number_of_streams": 1,
+        "dlt_tier": "core",
+        "use_instance_sizing": True,
+        "worker_instance_type": "m5.xlarge",
+        "worker_count": 2,
+        "driver_instance_type": "m5.xlarge",
+        "driver_count": 1,
+        "dbu_per_hour": 4.5,
+        "dbu_rate": 0.26,
+        "include_ec2_cost": True,
+        "ec2_hourly_cost": 0,
+        "source_transfer_gb_per_month": 90,
+        "source_transfer_price_per_gb_override": None,
+        "free_tier_already_consumed": True,
+        "photon_enabled": False,
+    }
+    payload["cross_region_transfer"] = {
+        "enabled": True,
+        "destination_region": "eu-west-2",
+        "include_dr_storage_copy": True,
+        "initial_replication_gb": 31.13,
+        "monthly_changed_data_gb": 3.11,
+        "monthly_cross_region_read_gb": 0,
+        "amortize_initial_months": 12,
+        "transfer_price_per_gb_override": 0.02,
+    }
+    payload["support_cost"] = {
+        "support_cost_percentage": 3,
+        "databricks_discount_percentage": 0,
+        "cloud_discount_percentage": 0,
+    }
+    payload["buffer_percentage"] = 15
+    return payload
