@@ -1602,37 +1602,36 @@ function App() {
               <NumberField label="AI/BI DBU/hour" value={aiBi.dbu_per_hour} onChange={(value) => setAiBi({ ...aiBi, dbu_per_hour: value })} disabled={!aiBi.enabled} />
               <NumberField label="AI/BI DBU rate (internal or public list)" value={aiBi.dbu_rate ?? getDefaultAiBiDbuRate(pricing)} onChange={(value) => setAiBi({ ...aiBi, dbu_rate: value })} disabled={!aiBi.enabled} />
             </div>
-          </section>
-
-          <section className="panel support-panel" data-nav-section="compute">
-            <PanelHeading title="Support and discounts" subtitle="Optional commercial adjustments" />
-            <div className="field-grid compact">
-              <NumberField
-                label="Support cost %"
-                value={supportCost.support_cost_percentage}
-                onChange={(value) => setSupportCost({ ...supportCost, support_cost_percentage: value })}
-              />
-              <NumberField
-                label="Databricks discount %"
-                value={supportCost.databricks_discount_percentage}
-                onChange={(value) => setSupportCost({ ...supportCost, databricks_discount_percentage: value })}
-              />
-              <NumberField
-                label="Cloud discount %"
-                value={supportCost.cloud_discount_percentage}
-                onChange={(value) => setSupportCost({ ...supportCost, cloud_discount_percentage: value })}
-              />
-            </div>
-            <div className="enterprise-note-card compact">
-              <ShieldAlert size={18} />
-              <div>
-                <strong>Discounts default to 0%</strong>
-                <span>
-                  Discounts are not included unless entered here. Databricks discount applies to DBU compute; cloud discount applies to storage and cross-region DR.
-                </span>
-                <small>
-                  Support uplift: {supportCost.support_cost_percentage}% after discounts, before buffer
-                </small>
+            <div className="support-panel embedded-support-panel">
+              <PanelHeading title="Support and discounts" subtitle="Optional commercial adjustments" />
+              <div className="field-grid compact">
+                <NumberField
+                  label="Support cost %"
+                  value={supportCost.support_cost_percentage}
+                  onChange={(value) => setSupportCost({ ...supportCost, support_cost_percentage: value })}
+                />
+                <NumberField
+                  label="Databricks discount %"
+                  value={supportCost.databricks_discount_percentage}
+                  onChange={(value) => setSupportCost({ ...supportCost, databricks_discount_percentage: value })}
+                />
+                <NumberField
+                  label="Cloud discount %"
+                  value={supportCost.cloud_discount_percentage}
+                  onChange={(value) => setSupportCost({ ...supportCost, cloud_discount_percentage: value })}
+                />
+              </div>
+              <div className="enterprise-note-card compact">
+                <ShieldAlert size={18} />
+                <div>
+                  <strong>Discounts default to 0%</strong>
+                  <span>
+                    Discounts are not included unless entered here. Databricks discount applies to DBU compute; cloud discount applies to storage and cross-region DR.
+                  </span>
+                  <small>
+                    Support uplift: {supportCost.support_cost_percentage}% after discounts, before buffer
+                  </small>
+                </div>
               </div>
             </div>
           </section>

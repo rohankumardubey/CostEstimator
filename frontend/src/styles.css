@@ -1576,6 +1576,16 @@ h3 {
   border-color: #e1d6a7;
 }
 
+.embedded-support-panel {
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid #eef3fb;
+}
+
+.embedded-support-panel .panel-heading {
+  margin-bottom: 12px;
+}
+
 .recommendation-panel {
   grid-column: 1 / -1;
   border-color: rgba(245, 189, 0, 0.36);
