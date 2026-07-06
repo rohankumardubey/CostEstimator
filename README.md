@@ -9,6 +9,9 @@ The app is deterministic in its calculations and uses live public storage pricin
 - Archive-only storage estimates.
 - Basic query access for occasional business users.
 - Scheduled reporting and dashboard refreshes.
+- One-time archive/batch migration loads.
+- Scheduled batch ingestion, scans, compaction, and refresh jobs.
+- Streaming ingestion for Kafka, Pulsar, Kinesis, Event Hubs, CDC, Lakeflow Connect, DLT, and Zerobus-style API ingestion.
 - Self-service analytics with higher query volume.
 - Optional future AI/BI or Genie-style usage.
 - Manual metadata-based estimation without uploading raw dataset files.
@@ -109,9 +112,9 @@ The config includes:
 - Storage price per GB-month.
 - Optional object monitoring costs per 1,000 objects.
 - Optional read and write request prices per 1,000 requests.
-- Databricks fallback DBU rate plus workload-specific SQL, jobs, and AI/BI DBU rates.
+- Databricks fallback DBU rate plus workload-specific SQL, batch jobs, DLT, Lakeflow Connect, streaming, and AI/BI DBU rates.
 - SQL warehouse sizes and DBU/hour assumptions.
-- Job cluster defaults and DBU/hour assumptions.
+- Batch/streaming cluster defaults and DBU/hour assumptions.
 - Scenario defaults for archive, query, reporting, analytics, and future AI/BI.
 
 Update this file when FinOps, platform, or data engineering teams refresh DBU rates, scenario defaults, or fallback assumptions. No backend code changes should be required for standard assumption updates.
@@ -165,19 +168,48 @@ monthly_sql_compute_cost =
   * optional_concurrency_multiplier
 ```
 
-Job compute:
+Batch ingestion compute:
 
 ```text
-monthly_job_hours =
+batch_hours =
   job_runs_per_month
   * average_job_runtime_minutes / 60
   * number_of_jobs
 
-monthly_job_compute_cost =
+recurring_monthly_batch_compute_cost =
   job_cluster_dbu_per_hour
   * job_dbu_rate
-  * monthly_job_hours
+  * batch_hours
+
+one_time_batch_compute_cost =
+  same formula, shown separately when frequency = one-time
 ```
+
+One-time archive loads are not annualized as monthly recurring spend. They appear as a separate one-time load output.
+
+Streaming ingestion is separate from batch because broker and CDC workloads often run continuously:
+
+```text
+monthly_streaming_hours =
+  hours_per_day
+  * days_per_month
+  * number_of_streams
+
+monthly_streaming_compute_cost =
+  streaming_dbu_per_hour
+  * dbu_rate
+  * monthly_streaming_hours
+  + optional_ec2_hourly_cost * monthly_streaming_hours
+```
+
+For Zerobus-style push/API ingestion:
+
+```text
+monthly_zerobus_ingest_cost =
+  monthly_ingested_gb * price_per_gb
+```
+
+Kafka and Pulsar pull-based streams should normally be modelled as Spark Structured Streaming or DLT continuous pipelines. Zerobus is intended for push/API ingestion where the source can send events to Databricks.
 
 AI/BI is disabled by default:
 
@@ -207,7 +239,7 @@ monthly_discount_amount =
   + databricks_monthly_subtotal * databricks_discount_percentage / 100
 ```
 
-Cloud discount applies to storage and cross-region DR. Databricks discount applies to SQL, jobs, and AI/BI compute. Support uplift is added after discounts and before the buffer is applied.
+Cloud discount applies to storage and cross-region DR. Databricks discount applies to SQL, batch ingestion, streaming ingestion, and AI/BI compute. Support uplift is added after discounts and before the buffer is applied.
 
 Buffered estimate:
 
@@ -226,6 +258,8 @@ The app is designed for manual entry of aggregate dataset metadata:
 - Environment count.
 - Redundancy model and storage copy multiplier.
 - Optional cross-region DR destination, initial replication GB, monthly changed-data GB, and monthly cross-region read GB.
+- Optional batch ingestion details such as one-time/archive load, schedule, GB per run, runtime, compute type, DBU/hour, and DBU rate.
+- Optional streaming ingestion details such as source type, ingestion product, daily/monthly GB, runtime pattern, streams, DBU/hour, DBU rate, and optional EC2 hourly cost.
 - Optional support cost percentage, Databricks discount percentage, and cloud discount percentage.
 
 Do not enter raw file contents, source document text, or sensitive business data.
@@ -273,8 +307,10 @@ These are placeholders only. The estimator remains generic for platform, analyti
 
 - Estimates are indicative, not invoices or official quotes.
 - Databricks DBU rates are assumptions until replaced with internal rate cards.
+- Streaming estimates do not include external broker/platform charges unless modelled separately.
 - Auto-stop behavior is captured as an assumption but not simulated as idle warehouse runtime.
-- No user authentication or persistence is included in this first version.
+- The login gate is for internal demos only and is not a replacement for company SSO.
+- Backend persistence is not included yet; saved editable estimates are local JSON files.
 
 ## Deployment notes
 

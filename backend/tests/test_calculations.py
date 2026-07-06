@@ -9,6 +9,7 @@ from app.calculations import (
     calculate_discount_adjustment,
     calculate_job_compute_cost,
     calculate_sql_compute_cost,
+    calculate_streaming_ingestion_cost,
     calculate_storage_cost,
     calculate_support_cost,
     calculate_total_estimate,
@@ -20,6 +21,7 @@ from app.models import (
     EstimateRequest,
     JobComputeInput,
     SQLComputeInput,
+    StreamingIngestionInput,
     StorageInput,
     SupportCostInput,
 )
@@ -105,6 +107,76 @@ def test_job_compute_formula() -> None:
 
     assert component.assumptions["monthly_job_hours"] == 20
     assert component.monthly_cost == 41.6
+
+
+def test_one_time_batch_compute_is_reported_separately() -> None:
+    job = JobComputeInput(
+        enabled=True,
+        ingestion_frequency="one-time",
+        data_volume_per_run_gb=300,
+        job_cluster_size="small",
+        job_runs_per_month=1,
+        average_job_runtime_minutes=60,
+        number_of_jobs=1,
+    )
+
+    component = calculate_job_compute_cost(job, pricing())
+
+    assert component.monthly_cost == 0
+    assert component.assumptions["one_time_batch_cost"] == 1.04
+
+
+def test_streaming_structured_streaming_formula() -> None:
+    streaming = StreamingIngestionInput(
+        enabled=True,
+        source_type="kafka",
+        ingestion_product="structured_streaming",
+        daily_data_gb=10,
+        hours_per_day=24,
+        days_per_month=30,
+        number_of_streams=1,
+        dbu_per_hour=4,
+    )
+
+    component = calculate_streaming_ingestion_cost(streaming, pricing())
+
+    assert component.assumptions["monthly_streaming_hours"] == 720
+    assert component.monthly_cost == 748.8
+
+
+def test_streaming_lakeflow_connect_can_apply_free_tier() -> None:
+    streaming = StreamingIngestionInput(
+        enabled=True,
+        source_type="saas_connector",
+        ingestion_product="lakeflow_connect",
+        daily_data_gb=1,
+        hours_per_day=1,
+        days_per_month=30,
+        number_of_streams=1,
+        dbu_per_hour=3,
+        free_tier_already_consumed=False,
+    )
+
+    component = calculate_streaming_ingestion_cost(streaming, pricing())
+
+    assert component.assumptions["free_dbus_applied"] == 3000
+    assert component.monthly_cost == 0
+
+
+def test_streaming_zerobus_uses_gb_pricing() -> None:
+    streaming = StreamingIngestionInput(
+        enabled=True,
+        source_type="api_webhook",
+        ingestion_product="zerobus_ingest",
+        daily_data_gb=10,
+        days_per_month=30,
+    )
+
+    component = calculate_streaming_ingestion_cost(streaming, pricing())
+
+    assert component.assumptions["monthly_data_gb"] == 300
+    assert component.assumptions["unit_price_per_gb"] == 0.072
+    assert component.monthly_cost == 21.6
 
 
 def test_ai_bi_disabled_excludes_cost() -> None:

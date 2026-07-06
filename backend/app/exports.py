@@ -37,7 +37,9 @@ def build_csv_summary(export_request: ExportRequest) -> str:
     writer.writerow(["scenario", "selected_scenario", estimate.scenario_title])
     writer.writerow(["estimate", "monthly_storage_cost", estimate.monthly_storage_cost])
     writer.writerow(["estimate", "monthly_sql_compute_cost", estimate.monthly_sql_compute_cost])
-    writer.writerow(["estimate", "monthly_job_compute_cost", estimate.monthly_job_compute_cost])
+    writer.writerow(["estimate", "monthly_batch_compute_cost", estimate.monthly_job_compute_cost])
+    writer.writerow(["estimate", "one_time_batch_compute_cost", estimate.one_time_batch_compute_cost])
+    writer.writerow(["estimate", "monthly_streaming_compute_cost", estimate.monthly_streaming_compute_cost])
     writer.writerow(["estimate", "monthly_ai_bi_cost", estimate.monthly_ai_bi_cost])
     writer.writerow(["estimate", "monthly_cross_region_dr_cost", estimate.monthly_cross_region_transfer_cost])
     writer.writerow(["estimate", "one_time_cross_region_dr_cost", estimate.one_time_cross_region_transfer_cost])
@@ -166,6 +168,7 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
     compute_monthly = (
         estimate.monthly_sql_compute_cost
         + estimate.monthly_job_compute_cost
+        + estimate.monthly_streaming_compute_cost
         + estimate.monthly_ai_bi_cost
     )
     card_rows = [
@@ -194,7 +197,9 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
     kpi_rows = [
         ["Storage", _money(estimate.monthly_storage_cost, estimate.currency), _money(estimate.monthly_storage_cost * 12, estimate.currency)],
         ["SQL compute", _money(estimate.monthly_sql_compute_cost, estimate.currency), _money(estimate.monthly_sql_compute_cost * 12, estimate.currency)],
-        ["Job compute", _money(estimate.monthly_job_compute_cost, estimate.currency), _money(estimate.monthly_job_compute_cost * 12, estimate.currency)],
+        ["Batch compute", _money(estimate.monthly_job_compute_cost, estimate.currency), _money(estimate.monthly_job_compute_cost * 12, estimate.currency)],
+        ["Streaming compute", _money(estimate.monthly_streaming_compute_cost, estimate.currency), _money(estimate.monthly_streaming_compute_cost * 12, estimate.currency)],
+        ["One-time batch load", _money(estimate.one_time_batch_compute_cost, estimate.currency), "-"],
         ["AI/BI optional", _money(estimate.monthly_ai_bi_cost, estimate.currency), _money(estimate.monthly_ai_bi_cost * 12, estimate.currency)],
         ["Cross-region DR", _money(estimate.monthly_cross_region_transfer_cost, estimate.currency), _money(estimate.monthly_cross_region_transfer_cost * 12, estimate.currency)],
         ["Discount adjustment", f"-{_money(estimate.monthly_discount_amount, estimate.currency)}", f"-{_money(estimate.monthly_discount_amount * 12, estimate.currency)}"],
@@ -239,7 +244,8 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
         ["Storage source", str(_component_assumption(estimate, "Storage", "pricing_source"))],
         ["Storage status", str(_component_assumption(estimate, "Storage", "pricing_status"))],
         ["SQL DBU source", str(_component_assumption(estimate, "Databricks SQL compute", "dbu_rate_source"))],
-        ["Job DBU source", str(_component_assumption(estimate, "Job/ingestion compute", "dbu_rate_source"))],
+        ["Batch DBU source", str(_component_assumption(estimate, "Batch ingestion compute", "dbu_rate_source"))],
+        ["Streaming DBU source", str(_component_assumption(estimate, "Streaming ingestion compute", "dbu_rate_source"))],
     ]
     workload_rows = [
         ["Storage class", str(_component_assumption(estimate, "Storage", "storage_display_name"))],
@@ -249,7 +255,9 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
         ["SQL DBU/hour", str(_component_assumption(estimate, "Databricks SQL compute", "dbu_per_hour"))],
         ["SQL DBU rate", str(_component_assumption(estimate, "Databricks SQL compute", "dbu_rate"))],
         ["Queries/month", f"{request.sql_compute.queries_per_month:,}"],
-        ["Job runs/month", f"{request.job_compute.job_runs_per_month:,}"],
+        ["Batch", f"{request.job_compute.ingestion_frequency.value} / {request.job_compute.job_runs_per_month:,} runs"],
+        ["Streaming", f"{request.streaming_ingestion.source_type.value} / {request.streaming_ingestion.ingestion_product.value}"],
+        ["Streaming hours/month", str(_component_assumption(estimate, "Streaming ingestion compute", "monthly_streaming_hours"))],
     ]
     commercial_rows = [
         ["AI/BI enabled", "Yes" if request.ai_bi.enabled else "No"],
@@ -290,7 +298,7 @@ def build_pdf_report(export_request: ExportRequest) -> bytes:
     footer_text = (
         "Metadata only - do not include raw source files, sensitive documents, or business content. "
         "Not included unless entered: negotiated discounts, committed-use discounts, support contracts, "
-        "network charges outside configured DR inputs, and final workspace configuration. "
+            "streaming broker charges, network charges outside configured DR inputs, and final workspace configuration. "
         f"{estimate.disclaimer}"
     )
     story.append(_footer_notice(footer_text, small_style))
@@ -335,7 +343,11 @@ def _pricing_source_rows(export_request: ExportRequest) -> list[tuple[str, Any]]
         ("support_cost_percentage", _component_assumption(estimate, "Support cost uplift", "support_cost_percentage")),
         ("support_cost_method", _component_assumption(estimate, "Support cost uplift", "calculation_method")),
         ("sql_dbu_rate_source", _component_assumption(estimate, "Databricks SQL compute", "dbu_rate_source")),
-        ("job_dbu_rate_source", _component_assumption(estimate, "Job/ingestion compute", "dbu_rate_source")),
+        ("batch_dbu_rate_source", _component_assumption(estimate, "Batch ingestion compute", "dbu_rate_source")),
+        ("streaming_dbu_rate_source", _component_assumption(estimate, "Streaming ingestion compute", "dbu_rate_source")),
+        ("streaming_source_type", _component_assumption(estimate, "Streaming ingestion compute", "source_type")),
+        ("streaming_ingestion_product", _component_assumption(estimate, "Streaming ingestion compute", "ingestion_product")),
+        ("streaming_monthly_hours", _component_assumption(estimate, "Streaming ingestion compute", "monthly_streaming_hours")),
         ("ai_bi_dbu_rate_source", _component_assumption(estimate, "AI/BI optional layer", "dbu_rate_source")),
     ]
 
@@ -575,9 +587,9 @@ def _footer_notice(text: str, small_style: ParagraphStyle) -> Table:
 def _validation_strip(body_style: ParagraphStyle) -> Table:
     rows = [
         [
-            Paragraph("<b>Included in this estimate</b><br/>Metadata volume, selected storage tier, Databricks SQL, jobs, optional AI/BI, DR inputs, support uplift, discounts, and buffer when populated.", body_style),
-            Paragraph("<b>Validate before approval</b><br/>Internal DBU rate card, enterprise cloud discounts, workspace configuration, DR scope, access pattern, and final FinOps ownership.", body_style),
-            Paragraph("<b>Not included unless entered</b><br/>Negotiated discounts, committed-use discounts, support contracts, non-DR network charges, migration project effort, and operational run costs.", body_style),
+            Paragraph("<b>Included in this estimate</b><br/>Metadata volume, storage tier, SQL, batch ingestion, streaming ingestion, optional AI/BI, DR, support uplift, discounts, and buffer when populated.", body_style),
+            Paragraph("<b>Validate before approval</b><br/>Internal DBU rate card, enterprise cloud discounts, workspace configuration, streaming product choice, DR scope, and final FinOps ownership.", body_style),
+            Paragraph("<b>Not included unless entered</b><br/>Message broker/platform costs, negotiated discounts, committed-use discounts, support contracts, non-DR network charges, migration project effort, and operational run costs.", body_style),
         ]
     ]
     table = Table(rows, colWidths=[3.42 * inch, 3.42 * inch, 3.42 * inch])
@@ -616,6 +628,18 @@ def _confidence_explanation(export_request: ExportRequest) -> str:
         parts.append("Cross-region DR is included.")
     else:
         parts.append("Cross-region DR is not included.")
+    if request.job_compute.enabled:
+        parts.append(
+            "Batch ingestion is included as one-time load cost."
+            if request.job_compute.ingestion_frequency.value == "one-time"
+            else "Recurring batch ingestion is included."
+        )
+    if request.streaming_ingestion.enabled:
+        parts.append(
+            f"Streaming ingestion is included using {request.streaming_ingestion.ingestion_product.value.replace('_', ' ')}."
+        )
+    else:
+        parts.append("Streaming ingestion is not included.")
     parts.append("DBU rates and final rates require FinOps/platform validation.")
     return " ".join(parts)
 

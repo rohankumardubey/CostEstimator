@@ -141,6 +141,30 @@ def get_job_dbu_rate(pricing: dict[str, Any], workload_type: str = "classic") ->
     return float(job_rates.get(workload_type, job_rates.get("classic", databricks.get("default_dbu_rate", 0))))
 
 
+def get_dlt_dbu_rate(pricing: dict[str, Any], workload_type: str = "core") -> float:
+    databricks = pricing.get("databricks", {})
+    dlt_rates = databricks.get("dbu_rates", {}).get("dlt", {})
+    return float(dlt_rates.get(workload_type, dlt_rates.get("core", databricks.get("default_dbu_rate", 0))))
+
+
+def get_lakeflow_connect_dbu_rate(pricing: dict[str, Any]) -> float:
+    databricks = pricing.get("databricks", {})
+    lakeflow = databricks.get("lakeflow_connect", {})
+    return float(lakeflow.get("managed_connectors_dbu_rate", databricks.get("default_dbu_rate", 0)))
+
+
+def get_lakeflow_connect_free_dbu_per_day(pricing: dict[str, Any]) -> float:
+    databricks = pricing.get("databricks", {})
+    lakeflow = databricks.get("lakeflow_connect", {})
+    return float(lakeflow.get("free_dbu_per_workspace_day", 0))
+
+
+def get_zerobus_price_per_gb(pricing: dict[str, Any]) -> float:
+    databricks = pricing.get("databricks", {})
+    lakeflow = databricks.get("lakeflow_connect", {})
+    return float(lakeflow.get("zerobus_ingest_price_per_gb", 0))
+
+
 def get_ai_bi_dbu_rate(pricing: dict[str, Any]) -> float:
     databricks = pricing.get("databricks", {})
     ai_bi_rates = databricks.get("dbu_rates", {}).get("ai_bi", {})

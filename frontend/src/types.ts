@@ -3,6 +3,10 @@ export type WarehouseType = "serverless" | "pro" | "classic";
 export type UsagePattern = "rare" | "occasional" | "frequent" | "high";
 export type IngestionFrequency = "one-time" | "daily" | "weekly" | "monthly";
 export type RedundancyModel = "single_copy" | "backup_copy" | "custom";
+export type BatchComputeType = "classic_jobs" | "serverless_jobs" | "dlt_triggered";
+export type StreamingSourceType = "kafka" | "pulsar" | "kinesis" | "event_hubs" | "cdc_database" | "saas_connector" | "api_webhook" | "other";
+export type StreamingIngestionProduct = "structured_streaming" | "dlt_continuous" | "lakeflow_connect" | "zerobus_ingest";
+export type StreamingRuntimePattern = "always_on" | "business_hours" | "custom";
 
 export interface DatasetInput {
   team_name: string;
@@ -40,13 +44,35 @@ export interface SQLComputeInput {
 }
 
 export interface JobComputeInput {
+  enabled: boolean;
   ingestion_frequency: IngestionFrequency;
+  batch_type: string;
+  data_volume_per_run_gb: number;
+  compute_type: BatchComputeType;
   job_runs_per_month: number;
   average_job_runtime_minutes: number;
   job_cluster_size: string;
   custom_dbu_per_hour?: number | null;
   dbu_rate?: number | null;
   number_of_jobs: number;
+}
+
+export interface StreamingIngestionInput {
+  enabled: boolean;
+  source_type: StreamingSourceType;
+  ingestion_product: StreamingIngestionProduct;
+  daily_data_gb: number;
+  monthly_data_gb?: number | null;
+  runtime_pattern: StreamingRuntimePattern;
+  hours_per_day: number;
+  days_per_month: number;
+  number_of_streams: number;
+  dbu_per_hour: number;
+  dbu_rate?: number | null;
+  include_ec2_cost: boolean;
+  ec2_hourly_cost: number;
+  free_tier_already_consumed: boolean;
+  photon_enabled: boolean;
 }
 
 export interface AIBIInput {
@@ -81,6 +107,7 @@ export interface EstimateRequest {
   storage: StorageInput;
   sql_compute: SQLComputeInput;
   job_compute: JobComputeInput;
+  streaming_ingestion: StreamingIngestionInput;
   ai_bi: AIBIInput;
   cross_region_transfer: CrossRegionTransferInput;
   support_cost: SupportCostInput;
@@ -107,6 +134,8 @@ export interface EstimateResponse {
   monthly_storage_cost: number;
   monthly_sql_compute_cost: number;
   monthly_job_compute_cost: number;
+  monthly_streaming_compute_cost: number;
+  one_time_batch_compute_cost: number;
   monthly_ai_bi_cost: number;
   monthly_cross_region_transfer_cost: number;
   one_time_cross_region_transfer_cost: number;
@@ -137,6 +166,7 @@ export interface ScenarioConfig {
   storage_class_by_cloud: Record<CloudProvider, string>;
   sql: Partial<SQLComputeInput>;
   jobs: Partial<JobComputeInput>;
+  streaming_ingestion?: Partial<StreamingIngestionInput>;
   ai_bi: Partial<AIBIInput>;
 }
 
@@ -181,9 +211,19 @@ export interface PricingConfig {
         serverless?: number;
         default?: number;
       };
+      dlt?: {
+        core?: number;
+        pro?: number;
+        advanced?: number;
+      };
       ai_bi?: {
         default?: number;
       };
+    };
+    lakeflow_connect?: {
+      managed_connectors_dbu_rate?: number;
+      free_dbu_per_workspace_day?: number;
+      zerobus_ingest_price_per_gb?: number;
     };
     sql_warehouses: Record<string, { display_name: string; dbu_per_hour: number }>;
     jobs: Record<string, { display_name: string; dbu_per_hour: number }>;

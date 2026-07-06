@@ -383,8 +383,16 @@ databricks:
     jobs:
       classic: 0.26
       serverless: 0.16
+    dlt:
+      core: 0.25
+      pro: 0.30
+      advanced: 0.36
     ai_bi:
       default: 0.70
+  lakeflow_connect:
+    managed_connectors_dbu_rate: 0.50
+    free_dbu_per_workspace_day: 100
+    zerobus_ingest_price_per_gb: 0.072
   sql_warehouses:
     xs:
       display_name: 2X-Small
@@ -411,6 +419,18 @@ databricks:
     large:
       display_name: Large job cluster
       dbu_per_hour: 16
+  streaming_defaults:
+    structured_streaming:
+      dbu_per_hour: 4
+      dbu_rate_key: jobs.classic
+      include_ec2_cost: false
+    dlt_continuous:
+      dbu_per_hour: 4
+      dbu_rate_key: dlt.core
+    lakeflow_connect:
+      dbu_per_hour: 3
+    zerobus_ingest:
+      price_per_gb: 0.072
 
 scenario_defaults:
   archive_only:
@@ -428,11 +448,17 @@ scenario_defaults:
       warehouse_size: xs
       apply_concurrency_multiplier: false
     jobs:
+      enabled: false
       ingestion_frequency: monthly
+      batch_type: one_time_archive_load
+      data_volume_per_run_gb: 0
+      compute_type: classic_jobs
       job_runs_per_month: 0
       average_job_runtime_minutes: 0
       job_cluster_size: small
       number_of_jobs: 0
+    streaming_ingestion:
+      enabled: false
     ai_bi:
       enabled: false
   basic_query:
@@ -449,11 +475,17 @@ scenario_defaults:
       warehouse_size: xs
       apply_concurrency_multiplier: false
     jobs:
+      enabled: true
       ingestion_frequency: monthly
+      batch_type: one_time_archive_load
+      data_volume_per_run_gb: 0
+      compute_type: classic_jobs
       job_runs_per_month: 1
       average_job_runtime_minutes: 30
       job_cluster_size: small
       number_of_jobs: 1
+    streaming_ingestion:
+      enabled: false
     ai_bi:
       enabled: false
   scheduled_reporting:
@@ -470,11 +502,17 @@ scenario_defaults:
       warehouse_size: small
       apply_concurrency_multiplier: false
     jobs:
+      enabled: true
       ingestion_frequency: daily
+      batch_type: scheduled_batch
+      data_volume_per_run_gb: 0
+      compute_type: classic_jobs
       job_runs_per_month: 30
       average_job_runtime_minutes: 20
       job_cluster_size: small
       number_of_jobs: 2
+    streaming_ingestion:
+      enabled: false
     ai_bi:
       enabled: false
   self_service_analytics:
@@ -491,11 +529,17 @@ scenario_defaults:
       warehouse_size: medium
       apply_concurrency_multiplier: true
     jobs:
+      enabled: true
       ingestion_frequency: daily
+      batch_type: scheduled_batch
+      data_volume_per_run_gb: 0
+      compute_type: classic_jobs
       job_runs_per_month: 30
       average_job_runtime_minutes: 35
       job_cluster_size: medium
       number_of_jobs: 3
+    streaming_ingestion:
+      enabled: false
     ai_bi:
       enabled: false
   future_ai_bi:
@@ -512,11 +556,17 @@ scenario_defaults:
       warehouse_size: medium
       apply_concurrency_multiplier: true
     jobs:
+      enabled: true
       ingestion_frequency: daily
+      batch_type: scheduled_batch
+      data_volume_per_run_gb: 0
+      compute_type: classic_jobs
       job_runs_per_month: 30
       average_job_runtime_minutes: 35
       job_cluster_size: medium
       number_of_jobs: 3
+    streaming_ingestion:
+      enabled: false
     ai_bi:
       enabled: true
       expected_users: 25
