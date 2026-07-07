@@ -23,6 +23,7 @@ The app is deterministic in its calculations and uses live public storage pricin
 - Frontend: React, TypeScript, Vite, Recharts, lucide-react.
 - Backend: Python FastAPI with Pydantic validation.
 - Config: `config/pricing.yaml`.
+- Persistence: SQLite for saved estimates and permalink-backed snapshots.
 - Tests: pytest unit and API tests for backend calculation behavior.
 - Containers: Dockerfiles for frontend and backend plus `docker-compose.yml`.
 
@@ -266,11 +267,19 @@ Do not enter raw file contents, source document text, or sensitive business data
 
 ## Save and load estimates
 
-Use the UI `Save` button to download an editable JSON file that contains the current inputs and selected scenario. Use `Load` to restore that file later and continue editing in the app.
+Use the UI `Save` button to store the current estimate as a SQLite-backed snapshot. The saved record includes the inputs, selected scenario, calculated result, pricing-source metadata, and generated timestamp.
 
-After loading or saving, the UI shows a confirmation message. Use `Reset` to restore the sample defaults and start a fresh estimate.
+Use `Load` to open a searchable saved-estimates library, then select an estimate to restore it into the planner. Use `Copy link` after saving to share a permalink such as `/estimate/{id}` with a stakeholder. Opening that link loads the saved snapshot directly after sign-in.
 
-This is local-only. The app does not store saved estimates on the backend, and no database or user account is required.
+The default database path is `data/estimates.sqlite3`. Override it with:
+
+```bash
+ESTIMATES_DB_PATH=/path/to/estimates.sqlite3
+```
+
+For local demos, SQLite is enough. For multi-instance production deployments, place the SQLite file on durable shared storage or replace the persistence layer with the company-approved managed database.
+
+JSON export remains available for offline review, but the main save/load workflow uses the backend database.
 
 ## Security and privacy
 
@@ -285,6 +294,9 @@ This is local-only. The app does not store saved estimates on the backend, and n
 - `GET /scenarios`
 - `POST /estimate`
 - `POST /scenario-comparison`
+- `GET /estimates`
+- `POST /estimates`
+- `GET /estimates/{estimate_id}`
 - `POST /export/json`
 - `POST /export/csv`
 - `POST /export/pdf`
@@ -310,7 +322,7 @@ These are placeholders only. The estimator remains generic for platform, analyti
 - Streaming estimates do not include external broker/platform charges unless modelled separately.
 - Auto-stop behavior is captured as an assumption but not simulated as idle warehouse runtime.
 - The login gate is for internal demos only and is not a replacement for company SSO.
-- Backend persistence is not included yet; saved editable estimates are local JSON files.
+- SQLite persistence is intended for simple internal deployments. Use managed persistence if multiple backend replicas need to write concurrently.
 
 ## Deployment notes
 
@@ -318,7 +330,7 @@ These are placeholders only. The estimator remains generic for platform, analyti
 - Put the backend behind standard internal authentication and network controls.
 - Set `PRICING_CONFIG_PATH` if pricing config is mounted outside the container image.
 - Set `PRICING_SOURCE=live` to enable live public storage pricing overlay.
-- Add durable persistence only if teams need saved estimates or audit history.
+- Set `ESTIMATES_DB_PATH` to a durable mounted path if saved estimates need to survive container rebuilds.
 - Add CI for `pytest`, frontend build, and container image scanning.
 
 ## Screenshots

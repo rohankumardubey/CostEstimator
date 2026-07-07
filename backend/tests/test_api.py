@@ -5,6 +5,7 @@ import re
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.persistence import initialize_database
 
 
 client = TestClient(app)
@@ -95,6 +96,40 @@ def test_scenario_comparison_endpoint() -> None:
     body = response.json()
     assert len(body["estimates"]) == 5
     assert body["estimates"][0]["scenario_key"] == "archive_only"
+
+
+def test_saved_estimate_round_trip(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("ESTIMATES_DB_PATH", str(tmp_path / "estimates.sqlite3"))
+    initialize_database()
+    payload = _estimate_payload()
+
+    save_response = client.post(
+        "/estimates",
+        json={
+            "request": payload,
+            "title": "Team - Dataset saved estimate",
+            "pricing_source": {"mode": "test"},
+        },
+    )
+
+    assert save_response.status_code == 200
+    saved = save_response.json()
+    assert saved["id"]
+    assert saved["title"] == "Team - Dataset saved estimate"
+    assert saved["request"]["dataset"]["team_name"] == "Team"
+    assert saved["estimate"]["monthly_storage_cost"] > 0
+
+    list_response = client.get("/estimates")
+    assert list_response.status_code == 200
+    summaries = list_response.json()["estimates"]
+    assert summaries[0]["id"] == saved["id"]
+    assert "request" not in summaries[0]
+
+    load_response = client.get(f"/estimates/{saved['id']}")
+    assert load_response.status_code == 200
+    loaded = load_response.json()
+    assert loaded["request"]["dataset"]["brand_or_dataset_name"] == "Dataset"
+    assert loaded["estimate"]["scenario_title"] == "Archive-only"
 
 
 def _estimate_payload() -> dict:

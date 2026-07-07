@@ -695,6 +695,7 @@ h3 {
   justify-content: space-between;
   gap: 24px;
   align-items: center;
+  min-width: 0;
   margin-bottom: 20px;
   border: 1px solid rgba(224, 228, 236, 0.96);
   border-radius: 18px;
@@ -704,17 +705,34 @@ h3 {
   backdrop-filter: blur(14px);
 }
 
+.topbar > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.topbar h2 {
+  white-space: nowrap;
+}
+
 .topbar-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  gap: 8px;
   justify-content: flex-end;
-  max-width: 620px;
+  max-width: min(100%, 760px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.topbar-actions::-webkit-scrollbar {
+  display: none;
 }
 
 .topbar-actions .primary-button,
 .topbar-actions .ghost-button {
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .primary-button,
@@ -793,10 +811,165 @@ h3 {
   color: #087443;
 }
 
+.inline-link-button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: #075c37;
+  font-weight: 820;
+  text-decoration: underline;
+}
+
 .error-banner {
   border: 1px solid #fecdca;
   background: linear-gradient(135deg, #fff1f3 0%, #ffffff 100%);
   color: #b42318;
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(17, 19, 24, 0.42);
+  backdrop-filter: blur(10px);
+}
+
+.saved-estimates-modal {
+  width: min(980px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(224, 228, 236, 0.96);
+  border-radius: 18px;
+  padding: 18px;
+  background:
+    radial-gradient(circle at 96% 0%, rgba(37, 99, 235, 0.08), transparent 16rem),
+    #ffffff;
+  box-shadow: 0 32px 90px rgba(17, 19, 24, 0.24);
+}
+
+.saved-estimates-modal header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.saved-estimates-modal h3 {
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-size: 1.25rem;
+}
+
+.icon-button {
+  min-width: 38px;
+  min-height: 38px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid #dfe4ee;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #343945;
+}
+
+.saved-search {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #dfe4ee;
+  border-radius: 13px;
+  padding: 0 12px;
+  background: #f8fafc;
+}
+
+.saved-search svg {
+  color: #7b8497;
+}
+
+.saved-search input {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+}
+
+.saved-estimates-list {
+  min-height: 220px;
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding-right: 4px;
+}
+
+.saved-estimate-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, auto) auto;
+  gap: 16px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  background: #ffffff;
+}
+
+.saved-estimate-row strong,
+.saved-estimate-row span,
+.saved-estimate-row small {
+  display: block;
+}
+
+.saved-estimate-row strong {
+  color: var(--ink);
+}
+
+.saved-estimate-row span {
+  margin-top: 4px;
+  color: #525a68;
+  font-size: 0.86rem;
+}
+
+.saved-estimate-row small {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.saved-estimate-cost {
+  text-align: right;
+}
+
+.saved-estimate-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.primary-button.compact,
+.ghost-button.compact {
+  min-height: 34px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+}
+
+.saved-empty-state {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  border: 1px dashed #d4d9e4;
+  border-radius: 14px;
+  padding: 28px;
+  background: #fbfcff;
+  color: var(--muted);
+  text-align: center;
 }
 
 .section,
@@ -1938,6 +2111,19 @@ summary {
   .pricing-source-header,
   .source-card-topline {
     flex-direction: column;
+  }
+
+  .saved-estimate-row {
+    grid-template-columns: 1fr;
+  }
+
+  .saved-estimate-cost {
+    text-align: left;
+  }
+
+  .saved-estimate-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
 }

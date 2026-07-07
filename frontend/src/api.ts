@@ -1,4 +1,13 @@
-import type { EstimateRequest, EstimateResponse, PricingConfig, ScenarioComparisonResponse, ScenarioConfig } from "./types";
+import type {
+  EstimateRequest,
+  EstimateResponse,
+  PricingConfig,
+  SavedEstimateCreate,
+  SavedEstimateDetail,
+  SavedEstimateListResponse,
+  ScenarioComparisonResponse,
+  ScenarioConfig
+} from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
@@ -31,6 +40,21 @@ export function postEstimate(payload: EstimateRequest): Promise<EstimateResponse
 
 export function postScenarioComparison(payload: EstimateRequest): Promise<ScenarioComparisonResponse> {
   return requestJson<ScenarioComparisonResponse>("/scenario-comparison", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function getSavedEstimates(): Promise<SavedEstimateListResponse> {
+  return requestJson<SavedEstimateListResponse>("/estimates");
+}
+
+export function getSavedEstimate(estimateId: string): Promise<SavedEstimateDetail> {
+  return requestJson<SavedEstimateDetail>(`/estimates/${encodeURIComponent(estimateId)}`);
+}
+
+export function postSavedEstimate(payload: SavedEstimateCreate): Promise<SavedEstimateDetail> {
+  return requestJson<SavedEstimateDetail>("/estimates", {
     method: "POST",
     body: JSON.stringify(payload)
   });

@@ -6,6 +6,7 @@ import {
   BadgeCheck,
   BarChart3,
   Cloud,
+  Copy,
   Database,
   Download,
   FolderOpen,
@@ -16,8 +17,10 @@ import {
   Loader2,
   LogOut,
   RefreshCw,
+  Search,
   ShieldAlert,
-  Sparkles
+  Sparkles,
+  X
 } from "lucide-react";
 import {
   Bar,
@@ -31,7 +34,7 @@ import {
   XAxis,
   YAxis
 } from "recharts";
-import { exportBlob, getPricingConfig, getScenarios, postEstimate, postScenarioComparison } from "./api";
+import { exportBlob, getPricingConfig, getSavedEstimate, getSavedEstimates, getScenarios, postEstimate, postSavedEstimate, postScenarioComparison } from "./api";
 import type {
   AIBIInput,
   CloudProvider,
@@ -42,6 +45,8 @@ import type {
   JobComputeInput,
   PricingConfig,
   RedundancyModel,
+  SavedEstimateDetail,
+  SavedEstimateSummary,
   SQLComputeInput,
   StreamingIngestionInput,
   ScenarioConfig,
@@ -189,9 +194,10 @@ const defaultSupportCost: SupportCostInput = {
 };
 
 type LoadedEstimateState = {
-  filename: string;
+  label: string;
   savedAt?: string;
-  action: "loaded" | "saved" | "reset";
+  id?: string;
+  action: "loaded" | "saved" | "copied" | "reset";
 };
 
 type EstimatorSection = "scenario" | "results" | "dataset" | "storage" | "compute" | "recommendation" | "assumptions";
@@ -207,9 +213,9 @@ const ESTIMATOR_SECTIONS: EstimatorSection[] = [
 ];
 
 function App() {
-  const loadEstimateInputRef = useRef<HTMLInputElement | null>(null);
   const activeSectionLockRef = useRef<EstimatorSection | null>(null);
   const activeSectionLockTimeoutRef = useRef<number | null>(null);
+  const loadedPermalinkRef = useRef<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(() => window.sessionStorage.getItem(AUTH_SESSION_KEY) === "true");
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -236,6 +242,13 @@ function App() {
   const [loadingEstimate, setLoadingEstimate] = useState(false);
   const [pricingRefreshStatus, setPricingRefreshStatus] = useState<"idle" | "refreshing" | "live" | "fallback">("idle");
   const [loadedEstimate, setLoadedEstimate] = useState<LoadedEstimateState | null>(null);
+  const [savedEstimateId, setSavedEstimateId] = useState<string | null>(null);
+  const [savedEstimateShareUrl, setSavedEstimateShareUrl] = useState<string | null>(null);
+  const [savedEstimates, setSavedEstimates] = useState<SavedEstimateSummary[]>([]);
+  const [savedEstimateSearch, setSavedEstimateSearch] = useState("");
+  const [savedEstimateModalOpen, setSavedEstimateModalOpen] = useState(false);
+  const [loadingSavedEstimates, setLoadingSavedEstimates] = useState(false);
+  const [savingEstimate, setSavingEstimate] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -294,6 +307,18 @@ function App() {
       window.clearInterval(interval);
     };
   }, [isAuthenticated, pricing?.pricing_source?.updated_at]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !pricing) {
+      return;
+    }
+    const permalinkId = getEstimateIdFromPath();
+    if (!permalinkId || loadedPermalinkRef.current === permalinkId) {
+      return;
+    }
+    loadedPermalinkRef.current = permalinkId;
+    void handleLoadSavedEstimate(permalinkId, { updateUrl: false, closeModal: true });
+  }, [isAuthenticated, pricing]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -393,6 +418,19 @@ function App() {
     dataset.region,
     crossRegionTransfer.destination_region
   );
+  const filteredSavedEstimates = savedEstimates.filter((savedEstimate) => {
+    const search = savedEstimateSearch.trim().toLowerCase();
+    if (!search) {
+      return true;
+    }
+    return [
+      savedEstimate.title,
+      savedEstimate.team_name,
+      savedEstimate.dataset_name,
+      savedEstimate.scenario_title,
+      savedEstimate.id
+    ].some((value) => value.toLowerCase().includes(search));
+  });
 
   function applyScenario(key: string) {
     const scenario = scenarios[key];
@@ -462,43 +500,92 @@ function App() {
     URL.revokeObjectURL(url);
   }
 
-  function handleSaveEditableEstimate() {
-    const filename = buildEditableEstimateFilename(dataset);
-    const payload = {
-      version: 1,
-      type: "databricks-cost-estimator-editable",
-      saved_at: new Date().toISOString(),
-      request: requestPayload
-    };
-    downloadJson(payload, filename);
-    setLoadedEstimate({ filename, action: "saved", savedAt: payload.saved_at });
-    setError(null);
+  async function handleSaveEstimate() {
+    setSavingEstimate(true);
+    try {
+      const saved = await postSavedEstimate({
+        request: requestPayload,
+        title: buildSavedEstimateTitle(requestPayload),
+        pricing_source: pricing?.pricing_source ?? null
+      });
+      applySavedEstimateMetadata(saved, "saved");
+      setEstimate(saved.estimate);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save this estimate.");
+    } finally {
+      setSavingEstimate(false);
+    }
   }
 
-  async function handleLoadEditableEstimate(file: File | undefined) {
-    if (!file) {
+  async function handleOpenSavedEstimateModal() {
+    setSavedEstimateModalOpen(true);
+    setLoadingSavedEstimates(true);
+    try {
+      const response = await getSavedEstimates();
+      setSavedEstimates(response.estimates);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load saved estimates.");
+    } finally {
+      setLoadingSavedEstimates(false);
+    }
+  }
+
+  async function handleLoadSavedEstimate(
+    estimateId: string,
+    options: { updateUrl?: boolean; closeModal?: boolean } = {}
+  ) {
+    setLoadingSavedEstimates(true);
+    try {
+      const saved = await getSavedEstimate(estimateId);
+      restoreEstimateRequest(saved.request);
+      setEstimate(saved.estimate);
+      applySavedEstimateMetadata(saved, "loaded");
+      if (options.updateUrl !== false) {
+        window.history.replaceState(null, "", buildSharePath(saved.id));
+      }
+      if (options.closeModal !== false) {
+        setSavedEstimateModalOpen(false);
+      }
+      setError(null);
+      navigateToEstimator("scenario");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load the saved estimate.");
+    } finally {
+      setLoadingSavedEstimates(false);
+    }
+  }
+
+  async function handleCopySavedEstimateLink(estimateId = savedEstimateId) {
+    if (!estimateId) {
       return;
     }
+    const shareUrl = buildShareUrl(estimateId);
     try {
-      const text = await file.text();
-      const parsed = JSON.parse(text) as unknown;
-      const request = extractEditableEstimateRequest(parsed);
-      restoreEstimateRequest(request);
+      await navigator.clipboard.writeText(shareUrl);
       setLoadedEstimate({
-        filename: file.name,
-        action: "loaded",
-        savedAt: extractSavedAt(parsed)
+        label: "Permalink copied",
+        action: "copied",
+        savedAt: new Date().toISOString(),
+        id: estimateId
       });
-      setError(null);
-      navigateToEstimator("dataset");
-    } catch (err) {
-      setLoadedEstimate(null);
-      setError(err instanceof Error ? err.message : "Could not load estimate file. Select a JSON file saved from this estimator.");
-    } finally {
-      if (loadEstimateInputRef.current) {
-        loadEstimateInputRef.current.value = "";
-      }
+      setSavedEstimateShareUrl(shareUrl);
+    } catch {
+      setError(`Copy failed. Use this link: ${shareUrl}`);
     }
+  }
+
+  function applySavedEstimateMetadata(saved: SavedEstimateDetail, action: "loaded" | "saved") {
+    const shareUrl = buildShareUrl(saved.id);
+    setSavedEstimateId(saved.id);
+    setSavedEstimateShareUrl(shareUrl);
+    setLoadedEstimate({
+      label: saved.title,
+      action,
+      savedAt: saved.updated_at,
+      id: saved.id
+    });
   }
 
   function restoreEstimateRequest(nextRequest: EstimateRequest) {
@@ -543,7 +630,10 @@ function App() {
     setCrossRegionTransfer(defaultCrossRegionTransfer);
     setSupportCost(defaultSupportCost);
     setBufferPercentage(pricing?.default_buffer_percentage ?? null);
-    setLoadedEstimate({ filename: "Sample defaults", action: "reset" });
+    setSavedEstimateId(null);
+    setSavedEstimateShareUrl(null);
+    window.history.replaceState(null, "", "/");
+    setLoadedEstimate({ label: "Sample defaults", action: "reset" });
     setError(null);
     navigateToEstimator("dataset");
   }
@@ -709,18 +799,14 @@ function App() {
             <h2>Databricks and storage planning</h2>
           </div>
           <div className="topbar-actions">
-            <input
-              ref={loadEstimateInputRef}
-              className="sr-only"
-              type="file"
-              accept="application/json,.json"
-              onChange={(event) => handleLoadEditableEstimate(event.target.files?.[0])}
-            />
-            <button className="ghost-button" onClick={() => loadEstimateInputRef.current?.click()}>
+            <button className="ghost-button" onClick={handleOpenSavedEstimateModal}>
               <FolderOpen size={16} /> Load
             </button>
-            <button className="ghost-button" onClick={handleSaveEditableEstimate}>
-              <Download size={16} /> Save
+            <button className="ghost-button" onClick={handleSaveEstimate} disabled={savingEstimate}>
+              {savingEstimate ? <Loader2 size={16} className="spin" /> : <Download size={16} />} Save
+            </button>
+            <button className="ghost-button" onClick={() => handleCopySavedEstimateLink()} disabled={!savedEstimateId}>
+              <Copy size={16} /> Copy link
             </button>
             <button className="ghost-button" onClick={resetToSampleData}>
               <RefreshCw size={16} /> Reset
@@ -755,7 +841,25 @@ function App() {
           <div className="success-strip">
             <BadgeCheck aria-hidden="true" />
             <span>{formatLoadedEstimateMessage(loadedEstimate)}</span>
+            {savedEstimateShareUrl ? (
+              <button className="inline-link-button" onClick={() => handleCopySavedEstimateLink()}>
+                Copy permalink
+              </button>
+            ) : null}
           </div>
+        ) : null}
+
+        {savedEstimateModalOpen ? (
+          <SavedEstimatesModal
+            estimates={filteredSavedEstimates}
+            loading={loadingSavedEstimates}
+            search={savedEstimateSearch}
+            currency={estimate?.currency ?? pricing?.currency ?? "USD"}
+            onSearchChange={setSavedEstimateSearch}
+            onClose={() => setSavedEstimateModalOpen(false)}
+            onOpen={(estimateId) => handleLoadSavedEstimate(estimateId)}
+            onCopy={(estimateId) => handleCopySavedEstimateLink(estimateId)}
+          />
         ) : null}
 
         {error ? <div className="error-banner">{error}</div> : null}
@@ -2104,6 +2208,87 @@ function KpiCard({ label, value, strong = false }: { label: string; value: strin
   );
 }
 
+function SavedEstimatesModal({
+  estimates,
+  loading,
+  search,
+  currency,
+  onSearchChange,
+  onClose,
+  onOpen,
+  onCopy
+}: {
+  estimates: SavedEstimateSummary[];
+  loading: boolean;
+  search: string;
+  currency: string;
+  onSearchChange: (value: string) => void;
+  onClose: () => void;
+  onOpen: (estimateId: string) => void;
+  onCopy: (estimateId: string) => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="saved-estimates-modal" role="dialog" aria-modal="true" aria-labelledby="saved-estimates-title">
+        <header>
+          <div>
+            <p className="eyebrow">Saved estimates</p>
+            <h3 id="saved-estimates-title">Load a saved estimate</h3>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Close saved estimates">
+            <X size={18} />
+          </button>
+        </header>
+        <label className="saved-search">
+          <Search size={16} />
+          <input
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search team, dataset, scenario, or ID"
+          />
+        </label>
+        <div className="saved-estimates-list">
+          {loading ? (
+            <div className="saved-empty-state">
+              <Loader2 size={18} className="spin" />
+              <span>Loading saved estimates...</span>
+            </div>
+          ) : estimates.length === 0 ? (
+            <div className="saved-empty-state">
+              <Database size={18} />
+              <span>No saved estimates found. Save the current estimate to create the first one.</span>
+            </div>
+          ) : (
+            estimates.map((savedEstimate) => (
+              <article className="saved-estimate-row" key={savedEstimate.id}>
+                <div>
+                  <strong>{savedEstimate.title}</strong>
+                  <span>{savedEstimate.team_name} / {savedEstimate.dataset_name}</span>
+                  <small>
+                    {savedEstimate.scenario_title} / Updated {new Date(savedEstimate.updated_at).toLocaleString()} / ID {savedEstimate.id}
+                  </small>
+                </div>
+                <div className="saved-estimate-cost">
+                  <strong>{money(savedEstimate.total_monthly_estimate, currency)}</strong>
+                  <span>{money(savedEstimate.estimate_with_buffer_annual, currency)} buffered annual</span>
+                </div>
+                <div className="saved-estimate-actions">
+                  <button className="ghost-button compact" onClick={() => onCopy(savedEstimate.id)}>
+                    <Copy size={14} /> Copy link
+                  </button>
+                  <button className="primary-button compact" onClick={() => onOpen(savedEstimate.id)}>
+                    Open
+                  </button>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function ConfidenceExplanationCard({
   estimate,
   request,
@@ -2632,35 +2817,23 @@ function formatUnitPrice(value: unknown, currency = "USD") {
   }).format(numericValue);
 }
 
-function downloadJson(payload: unknown, filename: string) {
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
+function buildSavedEstimateTitle(request: EstimateRequest) {
+  const team = request.dataset.team_name.trim() || "Untitled team";
+  const dataset = request.dataset.brand_or_dataset_name.trim() || "Untitled dataset";
+  return `${team} - ${dataset}`;
 }
 
-function buildEditableEstimateFilename(dataset: DatasetInput) {
-  const label = dataset.brand_or_dataset_name || dataset.team_name || "estimate";
-  const safeLabel = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-  return `databricks-cost-estimate-${safeLabel || "estimate"}-editable.json`;
+function buildSharePath(estimateId: string) {
+  return `/estimate/${encodeURIComponent(estimateId)}`;
 }
 
-function extractEditableEstimateRequest(payload: unknown): EstimateRequest {
-  if (!isRecord(payload)) {
-    throw new Error("The selected file is not valid JSON for this estimator.");
-  }
-  const candidate = isRecord(payload.request) ? payload.request : payload;
-  return normalizeEstimateRequest(candidate);
+function buildShareUrl(estimateId: string) {
+  return `${window.location.origin}${buildSharePath(estimateId)}`;
 }
 
-function extractSavedAt(payload: unknown) {
-  if (!isRecord(payload) || typeof payload.saved_at !== "string") {
-    return undefined;
-  }
-  return payload.saved_at;
+function getEstimateIdFromPath() {
+  const match = window.location.pathname.match(/^\/estimate\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
 function formatLoadedEstimateMessage(state: LoadedEstimateState) {
@@ -2669,9 +2842,12 @@ function formatLoadedEstimateMessage(state: LoadedEstimateState) {
   }
   const savedAt = state.savedAt ? ` Saved ${new Date(state.savedAt).toLocaleString()}.` : "";
   if (state.action === "saved") {
-    return `Editable estimate saved as ${state.filename}.${savedAt}`;
+    return `${state.label} saved to the estimate library.${savedAt}`;
   }
-  return `Loaded editable estimate: ${state.filename}.${savedAt}`;
+  if (state.action === "copied") {
+    return `Permalink copied for ${state.id ?? "saved estimate"}.`;
+  }
+  return `Loaded saved estimate: ${state.label}.${savedAt}`;
 }
 
 function normalizeEstimateRequest(payload: unknown): EstimateRequest {

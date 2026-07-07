@@ -183,6 +183,35 @@ export interface ScenarioComparisonResponse {
   estimates: EstimateResponse[];
 }
 
+export interface SavedEstimateSummary {
+  id: string;
+  title: string;
+  team_name: string;
+  dataset_name: string;
+  scenario_key: string;
+  scenario_title: string;
+  created_at: string;
+  updated_at: string;
+  total_monthly_estimate: number;
+  estimate_with_buffer_annual: number;
+}
+
+export interface SavedEstimateListResponse {
+  estimates: SavedEstimateSummary[];
+}
+
+export interface SavedEstimateDetail extends SavedEstimateSummary {
+  request: EstimateRequest;
+  estimate: EstimateResponse;
+  pricing_source: Record<string, unknown>;
+}
+
+export interface SavedEstimateCreate {
+  request: EstimateRequest;
+  title?: string | null;
+  pricing_source?: Record<string, unknown> | null;
+}
+
 export interface ScenarioConfig {
   title: string;
   description: string;

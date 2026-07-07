@@ -6,7 +6,8 @@ from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from .calculations import build_scenario_comparison, build_scenario_estimate
 from .exports import build_csv_summary, build_pdf_report
-from .models import EstimateRequest, ExportRequest
+from .models import EstimateRequest, ExportRequest, SavedEstimateCreate, SavedEstimateListResponse
+from .persistence import get_saved_estimate, initialize_database, list_saved_estimates, save_estimate
 from .pricing import (
     list_scenarios,
     load_effective_pricing_config,
@@ -20,6 +21,11 @@ app = FastAPI(
     version="0.1.0",
     description="Config-driven indicative estimator for Databricks and cloud storage costs.",
 )
+
+
+@app.on_event("startup")
+def startup() -> None:
+    initialize_database()
 
 app.add_middleware(
     CORSMiddleware,
@@ -72,6 +78,34 @@ def scenario_comparison(request: EstimateRequest):
         else None,
     )
     return build_scenario_comparison(request, pricing)
+
+
+@app.get("/estimates", response_model=SavedEstimateListResponse)
+def saved_estimates() -> SavedEstimateListResponse:
+    return SavedEstimateListResponse(estimates=list_saved_estimates())
+
+
+@app.post("/estimates")
+def create_saved_estimate(payload: SavedEstimateCreate):
+    pricing = load_effective_pricing_config_for_region(
+        payload.request.dataset.cloud_provider.value,
+        payload.request.dataset.region,
+        payload.request.cross_region_transfer.destination_region
+        if payload.request.cross_region_transfer.enabled
+        else None,
+    )
+    estimate_response = build_scenario_estimate(payload.request, pricing)
+    return save_estimate(
+        payload.request,
+        estimate_response,
+        pricing_source=payload.pricing_source or pricing.get("pricing_source"),
+        title=payload.title,
+    )
+
+
+@app.get("/estimates/{estimate_id}")
+def saved_estimate(estimate_id: str):
+    return get_saved_estimate(estimate_id)
 
 
 @app.post("/export/json")

@@ -281,3 +281,32 @@ class ExportRequest(BaseModel):
     estimate: EstimateResponse
     recommendation: ScenarioRecommendation | None = None
     pricing_source: dict[str, Any] | None = None
+
+
+class SavedEstimateCreate(BaseModel):
+    request: EstimateRequest
+    title: str | None = Field(default=None, max_length=180)
+    pricing_source: dict[str, Any] | None = None
+
+
+class SavedEstimateSummary(BaseModel):
+    id: str
+    title: str
+    team_name: str
+    dataset_name: str
+    scenario_key: str
+    scenario_title: str
+    created_at: str
+    updated_at: str
+    total_monthly_estimate: float
+    estimate_with_buffer_annual: float
+
+
+class SavedEstimateListResponse(BaseModel):
+    estimates: list[SavedEstimateSummary]
+
+
+class SavedEstimateDetail(SavedEstimateSummary):
+    request: EstimateRequest
+    estimate: EstimateResponse
+    pricing_source: dict[str, Any] = Field(default_factory=dict)
