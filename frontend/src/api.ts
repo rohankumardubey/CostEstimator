@@ -60,6 +60,12 @@ export function postSavedEstimate(payload: SavedEstimateCreate): Promise<SavedEs
   });
 }
 
+export function deleteSavedEstimate(estimateId: string): Promise<{ status: string; id: string }> {
+  return requestJson<{ status: string; id: string }>(`/estimates/${encodeURIComponent(estimateId)}`, {
+    method: "DELETE"
+  });
+}
+
 export async function exportBlob(path: "/export/json" | "/export/csv" | "/export/pdf", payload: unknown): Promise<Blob> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",

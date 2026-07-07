@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from .calculations import build_scenario_comparison, build_scenario_estimate
 from .exports import build_csv_summary, build_pdf_report
 from .models import EstimateRequest, ExportRequest, SavedEstimateCreate, SavedEstimateListResponse
-from .persistence import get_saved_estimate, initialize_database, list_saved_estimates, save_estimate
+from .persistence import delete_saved_estimate, get_saved_estimate, initialize_database, list_saved_estimates, save_estimate
 from .pricing import (
     list_scenarios,
     load_effective_pricing_config,
@@ -106,6 +106,12 @@ def create_saved_estimate(payload: SavedEstimateCreate):
 @app.get("/estimates/{estimate_id}")
 def saved_estimate(estimate_id: str):
     return get_saved_estimate(estimate_id)
+
+
+@app.delete("/estimates/{estimate_id}")
+def delete_estimate(estimate_id: str) -> dict[str, str]:
+    delete_saved_estimate(estimate_id)
+    return {"status": "deleted", "id": estimate_id}
 
 
 @app.post("/export/json")

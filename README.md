@@ -297,6 +297,7 @@ JSON export remains available for offline review, but the main save/load workflo
 - `GET /estimates`
 - `POST /estimates`
 - `GET /estimates/{estimate_id}`
+- `DELETE /estimates/{estimate_id}`
 - `POST /export/json`
 - `POST /export/csv`
 - `POST /export/pdf`

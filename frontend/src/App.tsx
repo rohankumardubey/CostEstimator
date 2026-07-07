@@ -20,6 +20,7 @@ import {
   Search,
   ShieldAlert,
   Sparkles,
+  Trash2,
   X
 } from "lucide-react";
 import {
@@ -34,7 +35,7 @@ import {
   XAxis,
   YAxis
 } from "recharts";
-import { exportBlob, getPricingConfig, getSavedEstimate, getSavedEstimates, getScenarios, postEstimate, postSavedEstimate, postScenarioComparison } from "./api";
+import { deleteSavedEstimate, exportBlob, getPricingConfig, getSavedEstimate, getSavedEstimates, getScenarios, postEstimate, postSavedEstimate, postScenarioComparison } from "./api";
 import type {
   AIBIInput,
   CloudProvider,
@@ -576,6 +577,31 @@ function App() {
     }
   }
 
+  async function handleDeleteSavedEstimate(savedEstimate: SavedEstimateSummary) {
+    const confirmed = window.confirm(
+      `Delete saved estimate "${savedEstimate.title}"?\n\nThis removes it from the saved library and its permalink will no longer open.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setLoadingSavedEstimates(true);
+    try {
+      await deleteSavedEstimate(savedEstimate.id);
+      setSavedEstimates((current) => current.filter((estimateItem) => estimateItem.id !== savedEstimate.id));
+      if (savedEstimateId === savedEstimate.id) {
+        setSavedEstimateId(null);
+        setSavedEstimateShareUrl(null);
+        window.history.replaceState(null, "", "/");
+      }
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete the saved estimate.");
+    } finally {
+      setLoadingSavedEstimates(false);
+    }
+  }
+
   function applySavedEstimateMetadata(saved: SavedEstimateDetail, action: "loaded" | "saved") {
     const shareUrl = buildShareUrl(saved.id);
     setSavedEstimateId(saved.id);
@@ -859,6 +885,7 @@ function App() {
             onClose={() => setSavedEstimateModalOpen(false)}
             onOpen={(estimateId) => handleLoadSavedEstimate(estimateId)}
             onCopy={(estimateId) => handleCopySavedEstimateLink(estimateId)}
+            onDelete={(savedEstimate) => handleDeleteSavedEstimate(savedEstimate)}
           />
         ) : null}
 
@@ -2216,7 +2243,8 @@ function SavedEstimatesModal({
   onSearchChange,
   onClose,
   onOpen,
-  onCopy
+  onCopy,
+  onDelete
 }: {
   estimates: SavedEstimateSummary[];
   loading: boolean;
@@ -2226,6 +2254,7 @@ function SavedEstimatesModal({
   onClose: () => void;
   onOpen: (estimateId: string) => void;
   onCopy: (estimateId: string) => void;
+  onDelete: (savedEstimate: SavedEstimateSummary) => void;
 }) {
   return (
     <div className="modal-backdrop" role="presentation">
@@ -2278,6 +2307,14 @@ function SavedEstimatesModal({
                   </button>
                   <button className="primary-button compact" onClick={() => onOpen(savedEstimate.id)}>
                     Open
+                  </button>
+                  <button
+                    className="icon-button danger"
+                    onClick={() => onDelete(savedEstimate)}
+                    aria-label={`Delete saved estimate ${savedEstimate.title}`}
+                    title="Delete saved estimate"
+                  >
+                    <Trash2 size={15} />
                   </button>
                 </div>
               </article>

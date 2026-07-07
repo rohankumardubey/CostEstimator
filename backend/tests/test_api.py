@@ -131,6 +131,17 @@ def test_saved_estimate_round_trip(monkeypatch, tmp_path) -> None:
     assert loaded["request"]["dataset"]["brand_or_dataset_name"] == "Dataset"
     assert loaded["estimate"]["scenario_title"] == "Archive-only"
 
+    delete_response = client.delete(f"/estimates/{saved['id']}")
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {"status": "deleted", "id": saved["id"]}
+
+    deleted_load_response = client.get(f"/estimates/{saved['id']}")
+    assert deleted_load_response.status_code == 404
+
+    deleted_list_response = client.get("/estimates")
+    assert deleted_list_response.status_code == 200
+    assert all(item["id"] != saved["id"] for item in deleted_list_response.json()["estimates"])
+
 
 def _estimate_payload() -> dict:
     return {

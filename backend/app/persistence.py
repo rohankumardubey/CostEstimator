@@ -140,6 +140,14 @@ def get_saved_estimate(estimate_id: str) -> SavedEstimateDetail:
     )
 
 
+def delete_saved_estimate(estimate_id: str) -> None:
+    initialize_database()
+    with _connect() as connection:
+        cursor = connection.execute("DELETE FROM estimates WHERE id = ?", (estimate_id,))
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail=f"Saved estimate '{estimate_id}' was not found.")
+
+
 def _connect() -> sqlite3.Connection:
     connection = sqlite3.connect(get_database_path())
     connection.row_factory = sqlite3.Row
